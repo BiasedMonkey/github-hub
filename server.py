@@ -642,15 +642,16 @@ def local_status(repo):
         ahead, behind = (int(x) for x in counts.split())
     sha, day, subject = (head.split("|", 2) + ["", ""])[:3]
     r = recipe(repo)
+    built = is_built(path, r)  # un git rev-parse : calculé une fois, sert deux fois
     return {"installed": True, "head": {"sha": sha, "date": day, "subject": subject},
             "dirty": bool(dirty), "ahead": ahead, "behind": behind, "path": str(path),
             "platform": r["platform"], "can_build": bool(r["build"]),
             "can_run": any(m != "web" for m in r["modes"]), "modes": r["modes"],
             "web": r["web"], "args_hint": r["args_hint"],
-            "built": is_built(path, r),
+            "built": built,
             "missing": missing_tools(r), "running": is_running(repo),
             "size": disk_size(repo), "shortcuts": shortcut_state(repo),
-            "launchable": bool(shortcut_command(repo, path, r))}
+            "launchable": bool(shortcut_command(repo, path, r, built))}
 
 
 # ---------------------------------------------------------------- poids sur le disque
@@ -745,10 +746,14 @@ def desktop_quote(arg):
     return quoted.replace("\\", "\\\\")
 
 
-def shortcut_command(repo, path, r=None):
-    """La commande lancée par un raccourci, hors du hub : fenêtre si possible, sinon terminal."""
+def shortcut_command(repo, path, r=None, built=None):
+    """La commande lancée par un raccourci, hors du hub : fenêtre si possible, sinon terminal.
+
+    built : résultat de is_built() s'il est déjà connu (évite de le recalculer).
+    """
     r = r or recipe(repo)
-    if not r["run"] or r["platform"] == "windows" or not is_built(path, r):
+    if not r["run"] or r["platform"] == "windows" or not (
+            is_built(path, r) if built is None else built):
         return None
     cmd = list(r["run"])
     if "/" in cmd[0] and not cmd[0].startswith("/"):

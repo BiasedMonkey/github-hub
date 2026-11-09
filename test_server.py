@@ -261,6 +261,25 @@ class RepereDeCompilation(unittest.TestCase):
         nouveau_commit(path)  # le binaire est resté, mais il vient de l'ancien commit
         self.assertFalse(server.local_status("test/binaire")["built"])
 
+    def test_statut_ne_relit_le_commit_qu_une_fois(self):
+        faux_depot("test/une-fois", {"Makefile": "all:\n\ttrue\n"})
+        attendre(server.start_job("test/une-fois", "build"))
+        appels = []
+        vrai_git = server.git
+
+        def git_compte(path, *args, **kw):
+            appels.append(args)
+            return vrai_git(path, *args, **kw)
+
+        server.git = git_compte
+        try:
+            statut = server.local_status("test/une-fois")
+        finally:
+            server.git = vrai_git
+        self.assertTrue(statut["built"])
+        # « compilé » sert deux fois (statut et raccourci) : un seul git rev-parse HEAD
+        self.assertEqual(appels.count(("rev-parse", "HEAD")), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
