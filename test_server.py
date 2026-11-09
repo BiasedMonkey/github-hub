@@ -57,6 +57,43 @@ def attendre(job_id, delai=30):
     return server.jobs[job_id]
 
 
+def faux_programme(nom, script):
+    """Un faux programme `nom` (script sh) dans un dossier à mettre en tête du PATH."""
+    dossier = Path(tempfile.mkdtemp(dir=server.HUB_DIR))
+    (dossier / nom).write_text("#!/bin/sh\n" + script)
+    (dossier / nom).chmod(0o755)
+    return dossier
+
+
+def serveur(test):
+    """Un serveur du hub sur un port libre, arrêté à la fin du test ; renvoie le port."""
+    httpd = server.make_server(0)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    test.addCleanup(httpd.server_close)
+    test.addCleanup(httpd.shutdown)
+    return httpd.server_address[1]
+
+
+def requete(port, chemin, corps=None):
+    """GET (sans corps) ou POST (avec corps) comme la fenêtre du hub ; renvoie (statut, JSON)."""
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    entetes = {"Host": f"127.0.0.1:{port}", "X-Hub": "1", "Content-Type": "application/json"}
+    if corps is None:
+        c.request("GET", chemin, headers=entetes)
+    else:
+        c.request("POST", chemin, json.dumps(corps), entetes)
+    r = c.getresponse()
+    reponse = (r.status, json.loads(r.read() or b"null"))
+    c.close()
+    return reponse
+
+
+def attendre_fichier(fichier, delai=10):
+    fin = time.time() + delai
+    while not fichier.exists() and time.time() < fin:
+        time.sleep(0.05)
+
+
 def outils_seulement(*noms):
     """Un PATH qui ne contient que ces outils (liens vers les vrais), ni konsole ni xterm."""
     dossier = Path(tempfile.mkdtemp(dir=server.HUB_DIR))
@@ -147,32 +184,56 @@ class JetonsGitHub(unittest.TestCase):
         self.assertEqual(job["state"], "ok", "\n".join(job["log"]))
         self.assertEqual(self.jetons_visibles(path / "env.txt"), [], "jetons visibles par la compilation")
 
-    def test_le_terminal_du_dossier_ne_voit_pas_les_jetons(self):
-        faux_depot("test/terminal", {"LISEZMOI": "rien\n"})
-        # un faux konsole, trouvé en premier dans le PATH, note l'environnement reçu
-        faux = Path(tempfile.mkdtemp(dir=server.HUB_DIR))
-        sortie = faux / "env.txt"
-        (faux / "konsole").write_text(f"#!/bin/sh\nenv > '{sortie}.tmp' && mv '{sortie}.tmp' '{sortie}'\n")
-        (faux / "konsole").chmod(0o755)
+    def env_vu_par(self, programme, route):
+        """Environnement reçu par `programme` (konsole, xdg-open…) que le hub lance via `route`."""
+        faux_depot(f"test/{programme}", {"LISEZMOI": "rien\n"})
+        # un faux programme, trouvé en premier dans le PATH, note l'environnement reçu
+        sortie = Path(tempfile.mkdtemp(dir=server.HUB_DIR)) / "env.txt"
+        faux = faux_programme(programme, f"env > '{sortie}.tmp' && mv '{sortie}.tmp' '{sortie}'\n")
         os.environ["PATH"] = f"{faux}:{os.environ['PATH']}"
-        httpd = server.make_server(0)
-        threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        self.addCleanup(httpd.server_close)
-        self.addCleanup(httpd.shutdown)
-        port = httpd.server_address[1]
-        # /api/terminal lance konsole sans l'attendre (voulu) : Python émet un ResourceWarning
-        # quand l'objet Popen disparaît alors que le faux konsole tourne encore
+        port = serveur(self)
+        # le hub lance ces programmes sans les attendre (voulu) : Python émet un ResourceWarning
+        # quand l'objet Popen disparaît alors que le faux programme tourne encore
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", ResourceWarning)
-            c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-            c.request("POST", "/api/terminal", json.dumps({"repo": "test/terminal"}),
-                      {"Host": f"127.0.0.1:{port}", "X-Hub": "1", "Content-Type": "application/json"})
-            self.assertEqual(c.getresponse().status, 200)
-            c.close()
-            fin = time.time() + 10
-            while not sortie.exists() and time.time() < fin:
-                time.sleep(0.05)
+            self.assertEqual(requete(port, route, {"repo": f"test/{programme}"})[0], 200)
+            attendre_fichier(sortie)
+        return sortie
+
+    def test_le_terminal_du_dossier_ne_voit_pas_les_jetons(self):
+        sortie = self.env_vu_par("konsole", "/api/terminal")
         self.assertEqual(self.jetons_visibles(sortie), [], "jetons visibles dans le terminal")
+
+    def git_qui_note_son_env(self, sortie):
+        """Un faux git : note son environnement pour clone et fetch, puis passe la main au vrai
+        (sauf clone, qui échoue aussitôt : les tests ne vont pas sur Internet)."""
+        vrai_git = shutil.which("git")
+        faux = faux_programme("git", f"""for a in "$@"; do
+  case "$a" in clone|fetch) env > '{sortie}' ;; esac
+  case "$a" in clone) exit 1 ;; esac
+done
+exec '{vrai_git}' "$@"
+""")
+        os.environ["PATH"] = f"{faux}:{os.environ['PATH']}"
+
+    def test_le_telechargement_garde_les_jetons(self):
+        # git n'exécute pas le code du projet ; un dépôt privé peut avoir besoin du jeton
+        sortie = Path(tempfile.mkdtemp(dir=server.HUB_DIR)) / "env.txt"
+        self.git_qui_note_son_env(sortie)
+        attendre(server.start_job("test/prive", "install"))
+        self.assertEqual(sorted(self.jetons_visibles(sortie)), ["GH_TOKEN", "GITHUB_TOKEN"])
+
+    def test_la_mise_a_jour_garde_les_jetons(self):
+        origine = Path(tempfile.mkdtemp(dir=server.HUB_DIR)) / "origine.git"
+        git(origine.parent, "init", "-q", "--bare", str(origine))
+        path = faux_depot("test/prive-maj", {"LISEZMOI": "rien\n"})
+        git(path, "remote", "add", "origin", str(origine))
+        git(path, "push", "-q", "-u", "origin", "HEAD")
+        sortie = Path(tempfile.mkdtemp(dir=server.HUB_DIR)) / "env.txt"
+        self.git_qui_note_son_env(sortie)
+        job = attendre(server.start_job("test/prive-maj", "update"))
+        self.assertEqual(job["state"], "ok", "\n".join(job["log"]))
+        self.assertEqual(sorted(self.jetons_visibles(sortie)), ["GH_TOKEN", "GITHUB_TOKEN"])
 
 
 class RepereDeCompilation(unittest.TestCase):

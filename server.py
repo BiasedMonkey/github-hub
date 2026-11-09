@@ -864,9 +864,11 @@ def run_job(job_id, repo, action):
 
     def stream(cmd, cwd=None, stoppable=False):
         log("$ " + shlex.join(cmd))
+        # git (clone, fetch, sous-modules…) n'exécute pas le code du projet et garde les
+        # jetons : un dépôt privé peut en avoir besoin. Compilation et programmes, non.
         p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True, errors="replace", start_new_session=stoppable,
-                             env=child_env())
+                             env=None if cmd[0] == "git" else child_env())
         if stoppable:
             running[repo] = p  # le bouton « Arrêter » peut l'interrompre
         with p.stdout:
