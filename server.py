@@ -279,7 +279,7 @@ def my_repos():
     if _mine_cache and time.time() - _mine_cache["t"] < 10 * 60:
         return _mine_cache["data"]
     if not shutil.which("gh"):
-        raise RuntimeError("L'outil « gh » n'est pas installé (sudo pacman -S github-cli).")
+        raise RuntimeError("L'outil « gh » n'est pas installé (paquet github-cli ou gh).")
     fields = ("nameWithOwner,description,stargazerCount,forkCount,primaryLanguage,isPrivate,"
               "isFork,pushedAt,createdAt,homepageUrl,licenseInfo,repositoryTopics")
     p = subprocess.run(["gh", "repo", "list", "--limit", "200", "--json", fields],
@@ -528,16 +528,30 @@ def is_running(repo):
     return p is not None and p.poll() is None
 
 
+# jetons que les projets compilés ou lancés n'ont pas à voir : un script npm
+# « postinstall » ou un build.rs pourrait les lire et les envoyer ailleurs
+SECRET_VARS = ("GITHUB_TOKEN", "GH_TOKEN")
+
+
+def child_env():
+    return {k: v for k, v in os.environ.items() if k not in SECRET_VARS}
+
+
 BUILT_MARKER = "github-hub-built"  # dans .git/ : invisible pour git, contient le commit compilé
 
 
 def is_built(path, r):
     if not r["build"]:
         return True
+    marker = path / ".git" / BUILT_MARKER
+    if marker.exists():
+        # compilé, mais pour quel commit ? Après une mise à jour dont la recompilation
+        # a échoué, le repère (et l'ancien binaire) datent de la version d'avant
+        _, head = git(path, "rev-parse", "HEAD")
+        return marker.read_text().strip() == head and (
+            not r["built_check"] or (path / r["built_check"]).exists())
     if r["built_check"]:
         return (path / r["built_check"]).exists()
-    if (path / ".git" / BUILT_MARKER).exists():
-        return True
     # projets npm installés avant l'ajout du marqueur
     return r["build"][0] == "npm" and (path / "node_modules").is_dir()
 
@@ -668,7 +682,12 @@ def shortcut_command(repo, path, r=None):
         cmd[0] = str(path / cmd[0])
     if "window" in r["modes"]:
         return cmd
-    return terminal_cmd(cmd, path) if "terminal" in r["modes"] else None
+    if "terminal" in r["modes"]:
+        try:
+            return terminal_cmd(cmd, path)
+        except RuntimeError:  # ni konsole ni xterm (bureau GNOME…) : pas de raccourci possible
+            return None
+    return None
 
 
 def find_icon(repo, path):
@@ -773,11 +792,13 @@ def run_job(job_id, repo, action):
     def stream(cmd, cwd=None, stoppable=False):
         log("$ " + shlex.join(cmd))
         p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             text=True, errors="replace", start_new_session=stoppable)
+                             text=True, errors="replace", start_new_session=stoppable,
+                             env=child_env())
         if stoppable:
             running[repo] = p  # le bouton « Arrêter » peut l'interrompre
-        for line in p.stdout:
-            log(line.rstrip())
+        with p.stdout:
+            for line in p.stdout:
+                log(line.rstrip())
         return p.wait()
 
     def build():
@@ -799,7 +820,7 @@ def run_job(job_id, repo, action):
             return 0
         if missing_tools(r):
             raise RuntimeError("outil(s) manquant(s) : " + ", ".join(missing_tools(r))
-                               + " (à installer avec pacman)")
+                               + " (à installer avec le gestionnaire de paquets du système)")
         log("── Compilation (ça peut prendre plusieurs minutes la première fois) ──")
         code = stream(r["build"], cwd=path)
         if code == 0:
@@ -831,7 +852,7 @@ def run_job(job_id, repo, action):
             cmd = terminal_cmd(cmd, path)
         log("$ " + " ".join(cmd))
         # nouvelle session : le programme survit à la fermeture du hub
-        running[repo] = subprocess.Popen(cmd, cwd=path, start_new_session=True,
+        running[repo] = subprocess.Popen(cmd, cwd=path, start_new_session=True, env=child_env(),
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         log("Lancé.")
         return 0
@@ -962,7 +983,22 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def from_hub(self):
+        """Refuse toute requête adressée à un autre nom que 127.0.0.1 / localhost.
+
+        Sinon une page web piégée peut faire pointer son propre nom de domaine vers
+        127.0.0.1 (« DNS rebinding ») : le navigateur la croit chez elle, la laisse
+        envoyer X-Hub et lire les réponses, donc installer et lancer n'importe quoi.
+        """
+        port = self.server.server_address[1]
+        if self.headers.get("Host") in (f"127.0.0.1:{port}", f"localhost:{port}"):
+            return True
+        self.send_json({"error": "interdit"}, 403)
+        return False
+
     def do_GET(self):
+        if not self.from_hub():
+            return
         url = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(url.query)
         if url.path == "/":
@@ -1058,6 +1094,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": "introuvable"}, 404)
 
     def do_POST(self):
+        if not self.from_hub():
+            return
         # un site web tiers ne peut pas ajouter cet en-tête sans pré-vol CORS,
         # qu'on ne valide jamais : protège contre les requêtes forgées
         if self.headers.get("X-Hub") != "1":
@@ -1100,7 +1138,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": str(e)}, 400)
         if self.path == "/api/terminal":
             subprocess.Popen(terminal_cmd([os.environ.get("SHELL", "sh")], repo_path(repo)),
-                             start_new_session=True)
+                             start_new_session=True, env=child_env())
             return self.send_json({"ok": True})
         if self.path == "/api/stop":
             stop_program(repo)
