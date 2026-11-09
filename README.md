@@ -26,6 +26,7 @@
 - **Mettre à jour** un projet ou **tout mettre à jour**. Tes modifications locales sont mises de côté et réappliquées, et le projet n'est recompilé que si son code a changé.
 - **Panneau Activité** : la progression et le journal de chaque téléchargement ou compilation.
 - **❤ Favoris**, gardés même quand un projet n'est plus en tendance.
+- **👤 Mes dépôts** : tes propres projets GitHub, privés compris, lus avec l'outil `gh` déjà connecté (filtres publics, privés et forks).
 - Fiche de détails pour chaque projet : README complet, licence, forks, activité.
 
 ## Prérequis
@@ -36,6 +37,7 @@
 | `git` | Télécharger et mettre à jour les dépôts |
 | `cargo`, `npm`, `cmake` + `ninja`, `make` | Facultatifs : seulement pour compiler les projets qui en ont besoin |
 | `konsole` ou `xterm`, `kdialog` ou `zenity` | Facultatifs : le mode Terminal et le choix de fichiers |
+| `gh` (GitHub CLI), connecté avec `gh auth login` | Facultatif : la rubrique « Mes dépôts » |
 
 Sur Arch / CachyOS :
 

@@ -374,6 +374,9 @@ const ICONS = {
   panel: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
   heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+  user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   scale: '<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>',
   github: null,
@@ -396,6 +399,7 @@ const S = {
   favs: new Set(), popFav: null,                                // favoris (enregistrés par le serveur)
   buzz: undefined,                                              // undefined = pas chargé, null = en cours
   search: { q: "", sort: "best", language: "", page: 1, items: [], total: 0, more: false, loading: false, error: null },
+  mine: undefined, mineFilter: "all",                           // tes propres dépôts (via gh)
   detail: null, checkInfo: null, menu: null,
 };
 const SOURCES = [["daily", "Aujourd'hui"], ["weekly", "Cette semaine"], ["monthly", "Ce mois"], ["new30", "Nouveaux projets"]];
@@ -436,6 +440,7 @@ const allKnown = () => {
   Object.values(S.trending).forEach(d => d?.items?.forEach(i => m.set(i.repo, i)));
   S.buzz?.items?.forEach(i => m.set(i.repo, i));
   S.search.items.forEach(i => m.set(i.repo, i));
+  S.mine?.items?.forEach(i => m.set(i.repo, {...m.get(i.repo), ...i}));
   S.catalog?.repos.forEach(r => m.set(r.repo, r));
   return m;
 };
@@ -547,7 +552,9 @@ function card(raw) {
       <span title="Étoiles">${icon("star")}${k(r.stars)}</span>
       ${r.forks != null ? `<span title="Forks">${icon("fork")}${k(r.forks)}</span>` : ""}
       ${r.language ? `<span><i class="lang-dot" style="background:${LANG_COLORS[r.language] || "#8b949e"}"></i>${esc(r.language)}</span>` : ""}
-      ${r.gained ? `<span class="gain">+${k(r.gained)} ★ ${S.source === "weekly" ? "cette semaine" : S.source === "monthly" ? "ce mois" : "aujourd'hui"}</span>` : ""}
+      ${r.private ? `<span class="badge b-off">${icon("lock")}Privé</span>` : ""}
+      ${r.fork ? `<span class="badge b-off">${icon("fork")}Fork</span>` : ""}
+      ${r.gained ? `<span class="gain">+${k(r.gained)} ★${S.source === "weekly" ? "cette semaine" : S.source === "monthly" ? "ce mois" : "aujourd'hui"}</span>` : ""}
       ${r.pushed_at ? `<span title="Dernière activité">${icon("clock")}${ago(r.pushed_at)}</span>` : ""}
     </div>
     ${l.installed || l.platform ? `<div class="badges">${badges(l)}</div>` : ""}
@@ -607,6 +614,28 @@ const VIEWS = {
     return groups.map(([c, l]) => section(`${c.icon} ${esc(c.name)}`, l.length, grid(l))).join("");
   },
   installed: () => S.catalog ? grid(installed(), "Aucun projet installé pour l'instant. Clique sur « Installer » sur une carte pour commencer.") : skeletons(3),
+  mine: () => {
+    const d = S.mine;
+    if (!d) return skeletons(6);
+    if (d.error) return `<div class="empty">${icon("alert")} ${esc(d.error)}</div>`;
+    const all = d.items, pub = all.filter(r => !r.private), priv = all.filter(r => r.private), forks = all.filter(r => r.fork);
+    const filters = [["all", `Tous (${all.length})`], ["public", `Publics (${pub.length})`],
+                     ["private", `Privés (${priv.length})`], ["fork", `Forks (${forks.length})`]];
+    const shown = {all, public: pub, private: priv, fork: forks}[S.mineFilter] || all;
+    return `<div class="hero">
+        <div style="display:flex;gap:16px;align-items:center;--cat:var(--accent)">
+          ${avatar(d.login, 128).replace('class="avatar"', 'class="avatar" style="width:64px;height:64px;border-radius:16px;font-size:26px"')}
+          <div><h2>@${esc(d.login)}</h2><p>${all.length} dépôts sur ton compte GitHub, privés compris. Ils s'installent, se lancent et se mettent à jour comme les autres.</p></div>
+        </div>
+        <div class="toolbar" style="margin:18px 0 0">
+          <div class="seg">${filters.map(([v, l]) => `<button data-mine-filter="${v}" class="${S.mineFilter === v ? "on" : ""}">${l}</button>`).join("")}</div>
+          <span style="flex:1"></span>
+          <button class="btn" data-mine-refresh title="Relire la liste depuis GitHub">${icon("refresh")}Actualiser</button>
+          <a class="btn" href="https://github.com/${esc(d.login)}" target="_blank">${icon("github")}Mon profil</a>
+          <a class="btn primary" href="https://github.com/new" target="_blank">${icon("plus")}Nouveau dépôt</a>
+        </div>
+      </div>` + grid(shown, "Aucun dépôt dans ce filtre.");
+  },
   search: () => {
     const s = S.search;
     const sorts = [["best", "Pertinence"], ["stars", "Plus d'étoiles"], ["updated", "Mis à jour récemment"]];
@@ -686,6 +715,7 @@ const TITLES = {
   favorites: ["Favoris", "Les projets que tu as gardés de côté"],
   buzz: ["Gros buzz", "Les dépôts qui font l'actualité de GitHub"],
   search: ["Recherche GitHub", "Tout GitHub, directement depuis le hub"],
+  mine: ["Mes dépôts", "Tes projets publiés sur GitHub"],
   installed: ["Installés", "Ce qui est déjà sur ton PC"],
   trending: ["Tendances GitHub", "Les dépôts qui gagnent le plus d'étoiles en ce moment"],
 };
@@ -702,6 +732,7 @@ function drawNav() {
   $("#nav").innerHTML =
     `<h6>Bibliothèque</h6>` +
     item("home", icon("home"), "Accueil") +
+    item("mine", icon("user"), "Mes dépôts", S.mine?.items?.length) +
     item("favorites", icon("heart"), "Favoris", S.favs.size) +
     item("selection", icon("star"), "Ma sélection", curated().length) +
     item("installed", icon("box"), "Installés", inst.length + (upd ? ` · ${upd}↑` : ""), upd) +
@@ -943,7 +974,8 @@ async function act(action, repo, mode) {
     return startRun(repo, mode);
   }
   if (action === "stop") { await api("/api/stop", {repo}); toast(`${repo} arrêté.`, "ok"); return setTimeout(loadCatalog, 500); }
-  if (action === "install" && !allKnown().get(repo)?.curated && !confirm(
+  const known = allKnown().get(repo);
+  if (action === "install" && !known?.curated && !known?.mine && !confirm(
       `${repo} ne fait pas partie de ta sélection vérifiée.\n\n` +
       `Le hub va télécharger son code, le compiler et pouvoir le lancer sur ton PC. ` +
       `Les « cheats », « boosters FPS » ou « cracks » sont souvent des pièges à virus.\n\n` +
@@ -1109,6 +1141,15 @@ async function runSearch(q = S.search.q, append = false) {
   draw();
 }
 
+async function loadMine(refresh = false) {
+  if (S.mine === null || (S.mine && !refresh && !S.mine.error)) return;  // en cours, ou déjà là
+  S.mine = null;
+  draw();
+  S.mine = await api("/api/mine" + (refresh ? "?refresh=1" : "")).catch(e => ({error: String(e)}));
+  if (S.mine.categories) S.categories = S.mine.categories;
+  draw();
+}
+
 async function loadBuzz() {
   if (S.buzz !== undefined) return;  // déjà chargé ou en cours
   S.buzz = null;
@@ -1149,6 +1190,8 @@ document.addEventListener("click", e => {
     box.focus();
   }
   else if (d.recent) runSearch(d.recent);
+  else if (d.mineFilter) { S.mineFilter = d.mineFilter; draw(); }
+  else if ("mineRefresh" in d) loadMine(true);
   else if ("more" in d) runSearch(S.search.q, true);
   else if (d.ghSearch) { $("#search").value = ""; S.query = ""; runSearch(d.ghSearch); }
   else if (d.menu) { e.stopPropagation(); S.menu?.dataset.repo === d.menu ? closeMenu() : (openMenu(el, d.menu), S.menu.dataset.repo = d.menu); }
@@ -1205,6 +1248,7 @@ draw();
 loadCatalog().then(checkUpdates);
 loadTrending("daily");
 loadBuzz();
+loadMine();
 pollJobs();
 </script>
 </body>

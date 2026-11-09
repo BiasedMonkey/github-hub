@@ -264,6 +264,44 @@ def category_trending(cat_id, source, language):
     return general
 
 
+_mine_cache = {}
+
+
+def my_repos():
+    """Tes propres dépôts, privés compris, lus avec l'outil `gh` déjà connecté à ton compte.
+
+    Passer par `gh` évite d'avoir à donner un jeton au hub, et sa requête GraphQL
+    ne consomme pas le quota de recherche (10/min).
+    """
+    if _mine_cache and time.time() - _mine_cache["t"] < 10 * 60:
+        return _mine_cache["data"]
+    if not shutil.which("gh"):
+        raise RuntimeError("L'outil « gh » n'est pas installé (sudo pacman -S github-cli).")
+    fields = ("nameWithOwner,description,stargazerCount,forkCount,primaryLanguage,isPrivate,"
+              "isFork,pushedAt,createdAt,homepageUrl,licenseInfo,repositoryTopics")
+    p = subprocess.run(["gh", "repo", "list", "--limit", "200", "--json", fields],
+                       capture_output=True, text=True, timeout=60)
+    if p.returncode != 0:
+        raise RuntimeError("gh n'a pas pu lister tes dépôts : " + (p.stderr.strip() or "connecte-toi avec « gh auth login »"))
+    login = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True,
+                           text=True, timeout=30).stdout.strip()
+    items = []
+    for r in json.loads(p.stdout):
+        item = {"repo": r["nameWithOwner"], "description": r["description"] or "",
+                "stars": r["stargazerCount"], "forks": r["forkCount"],
+                "language": (r["primaryLanguage"] or {}).get("name"),
+                "topics": [t["name"] for t in r["repositoryTopics"] or []],
+                "pushed_at": r["pushedAt"], "created_at": r["createdAt"],
+                "homepage": r["homepageUrl"] or "",
+                "license": ((r["licenseInfo"] or {}).get("key") or "").upper() or None,
+                "private": r["isPrivate"], "fork": r["isFork"], "mine": True, "gained": None,
+                "category": catalog_entry(r["nameWithOwner"]).get("category")}
+        items.append(with_category(item))
+    data = {"login": login, "items": items}
+    _mine_cache.update(t=time.time(), data=data)
+    return data
+
+
 SEARCH_SORTS = {"best": "", "stars": "stars", "updated": "updated"}
 
 
@@ -740,6 +778,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "GitHub limite les recherches sans compte (10 par minute) : "
                                          "nouvel essai automatique dans une minute." if limited else str(e),
                                 "retry": limited}, 502)
+        elif url.path == "/api/mine":
+            if qs.get("refresh"):
+                _mine_cache.clear()
+            try:
+                data = my_repos()
+                items = [dict(i, local=local_status(i["repo"])) for i in data["items"]]
+                self.send_json({"categories": public_categories(), "login": data["login"], "items": items})
+            except Exception as e:
+                self.send_json({"error": str(e)}, 502)
         elif url.path == "/api/search":
             query = qs.get("q", [""])[0]
             if not query.strip():
