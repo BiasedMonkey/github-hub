@@ -93,6 +93,29 @@ class OrigineDesRequetes(unittest.TestCase):
                 self.assertEqual(self.requete("GET", "/api/jobs", host), 200)
 
 
+class JetonsGitHub(unittest.TestCase):
+    def setUp(self):
+        self.avant = {k: os.environ.get(k) for k in ("GITHUB_TOKEN", "GH_TOKEN")}
+        os.environ["GITHUB_TOKEN"] = "jeton-secret-github"
+        os.environ["GH_TOKEN"] = "jeton-secret-gh"
+
+    def tearDown(self):
+        for k, v in self.avant.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_la_compilation_ne_voit_pas_les_jetons(self):
+        path = faux_depot("test/jeton", {"Makefile": "all:\n\tenv > env.txt\n"})
+        job = attendre(server.start_job("test/jeton", "build"))
+        self.assertEqual(job["state"], "ok", "\n".join(job["log"]))
+        variables = dict(l.split("=", 1) for l in (path / "env.txt").read_text().splitlines() if "=" in l)
+        self.assertIn("PATH", variables)
+        # on ne compare que les noms : un échec n'affiche pas tout l'environnement
+        visibles = [k for k, v in variables.items() if "jeton-secret" in v]
+        self.assertEqual(visibles, [], "jetons visibles par la compilation")
+
 
 
 if __name__ == "__main__":

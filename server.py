@@ -528,6 +528,15 @@ def is_running(repo):
     return p is not None and p.poll() is None
 
 
+# jetons que les projets compilés ou lancés n'ont pas à voir : un script npm
+# « postinstall » ou un build.rs pourrait les lire et les envoyer ailleurs
+SECRET_VARS = ("GITHUB_TOKEN", "GH_TOKEN")
+
+
+def child_env():
+    return {k: v for k, v in os.environ.items() if k not in SECRET_VARS}
+
+
 BUILT_MARKER = "github-hub-built"  # dans .git/ : invisible pour git, contient le commit compilé
 
 
@@ -773,7 +782,8 @@ def run_job(job_id, repo, action):
     def stream(cmd, cwd=None, stoppable=False):
         log("$ " + shlex.join(cmd))
         p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             text=True, errors="replace", start_new_session=stoppable)
+                             text=True, errors="replace", start_new_session=stoppable,
+                             env=child_env())
         if stoppable:
             running[repo] = p  # le bouton « Arrêter » peut l'interrompre
         for line in p.stdout:
@@ -831,7 +841,7 @@ def run_job(job_id, repo, action):
             cmd = terminal_cmd(cmd, path)
         log("$ " + " ".join(cmd))
         # nouvelle session : le programme survit à la fermeture du hub
-        running[repo] = subprocess.Popen(cmd, cwd=path, start_new_session=True,
+        running[repo] = subprocess.Popen(cmd, cwd=path, start_new_session=True, env=child_env(),
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         log("Lancé.")
         return 0
