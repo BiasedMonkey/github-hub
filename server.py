@@ -1229,7 +1229,7 @@ class Handler(BaseHTTPRequestHandler):
         if not REPO_RE.match(repo):
             return self.send_json({"error": "nom de dépôt invalide"}, 400)
         if self.path == "/api/open":
-            subprocess.Popen(["xdg-open", str(repo_path(repo))])
+            subprocess.Popen(["xdg-open", str(repo_path(repo))], env=child_env())
             return self.send_json({"ok": True})
         if self.path == "/api/shortcut":
             if data.get("kind") not in ("desktop", "menu"):

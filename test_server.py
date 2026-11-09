@@ -204,6 +204,10 @@ class JetonsGitHub(unittest.TestCase):
         sortie = self.env_vu_par("konsole", "/api/terminal")
         self.assertEqual(self.jetons_visibles(sortie), [], "jetons visibles dans le terminal")
 
+    def test_le_gestionnaire_de_fichiers_ne_voit_pas_les_jetons(self):
+        sortie = self.env_vu_par("xdg-open", "/api/open")
+        self.assertEqual(self.jetons_visibles(sortie), [], "jetons visibles par « Ouvrir le dossier »")
+
     def git_qui_note_son_env(self, sortie):
         """Un faux git : note son environnement pour clone et fetch, puis passe la main au vrai
         (sauf clone, qui échoue aussitôt : les tests ne vont pas sur Internet)."""
