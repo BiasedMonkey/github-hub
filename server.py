@@ -146,8 +146,8 @@ def fetch_meta(repos):
     L'API REST classique limite à 60 appels/heure sans compte ; la recherche
     groupée en fait tenir une dizaine par appel. Les infos sont gardées 6 h sur disque.
     """
-    stale = [r for r in dict.fromkeys(repos)
-             if time.time() - meta_cache.get(r, {}).get("t", 0) > META_TTL]
+    stale = [r for r in dict.fromkeys(repos) if REPO_RE.match(r)
+             and time.time() - meta_cache.get(r, {}).get("t", 0) > META_TTL]
     chunks, cur = [], ""
     for r in stale:
         part = f"repo:{r} "
@@ -163,8 +163,10 @@ def fetch_meta(repos):
         try:
             for i in http_get(url).get("items", []):
                 meta_cache[i["full_name"]] = meta_from_api(i)
-        except Exception:
-            break  # limite atteinte ou hors ligne : on garde les infos en cache
+        except Exception as e:
+            if any(code in str(e) for code in ("403", "429")) or "urlopen" in str(e):
+                break  # limite atteinte ou hors ligne : on garde les infos en cache
+            # sinon (requête refusée pour ce paquet seulement) : on tente les paquets suivants
     if chunks:
         with meta_lock:
             CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -482,7 +484,9 @@ def recipe(repo):
         else:
             # rien de reconnu : « Lancer » ouvre un terminal dans le dossier
             r["run"], r["terminal"] = [os.environ.get("SHELL", "sh")], True
-    if r["run"] and not r["built_check"] and "/" in r["run"][0]:
+    # seulement un chemin DANS le projet (target/release/x) : le terminal de secours
+    # (/bin/zsh) existe toujours et faisait croire que tout était compilé
+    if r["run"] and not r["built_check"] and "/" in r["run"][0] and not r["run"][0].startswith("/"):
         r["built_check"] = r["run"][0]
     r["requires"] = entry.get("requires") or r.get("requires") or (
         [r["build"][0]] if r["build"] and r["build"][0] != "sh" else [])
@@ -523,6 +527,20 @@ def is_running(repo):
     return p is not None and p.poll() is None
 
 
+BUILT_MARKER = "github-hub-built"  # dans .git/ : invisible pour git, contient le commit compilé
+
+
+def is_built(path, r):
+    if not r["build"]:
+        return True
+    if r["built_check"]:
+        return (path / r["built_check"]).exists()
+    if (path / ".git" / BUILT_MARKER).exists():
+        return True
+    # projets npm installés avant l'ajout du marqueur
+    return r["build"][0] == "npm" and (path / "node_modules").is_dir()
+
+
 def local_status(repo):
     path = repo_path(repo)
     if not (path / ".git").exists():
@@ -541,7 +559,7 @@ def local_status(repo):
             "platform": r["platform"], "can_build": bool(r["build"]),
             "can_run": any(m != "web" for m in r["modes"]), "modes": r["modes"],
             "web": r["web"], "args_hint": r["args_hint"],
-            "built": not r["built_check"] or (path / r["built_check"]).exists(),
+            "built": is_built(path, r),
             "missing": missing_tools(r), "running": is_running(repo)}
 
 
@@ -581,6 +599,15 @@ def run_job(job_id, repo, action):
 
     def build():
         r = recipe(repo)
+        if (path / ".gitmodules").exists() and catalog_entry(repo).get("submodules", True):
+            # les sous-modules sont d'autres dépôts inclus dans le projet : sans eux le
+            # projet est incomplet et sa compilation échoue. --depth 1 : leur dernière
+            # version seulement, 8 à la fois
+            log("── Sous-modules ──")
+            code = stream(["git", "-C", str(path), "submodule", "update", "--init", "--recursive",
+                           "--depth", "1", "--jobs", "8", "--progress"])
+            if code != 0:
+                return code
         if r["platform"] == "windows":
             log("Ce projet ne se compile que sous Windows : compilation ignorée.")
             return 0
@@ -591,7 +618,11 @@ def run_job(job_id, repo, action):
             raise RuntimeError("outil(s) manquant(s) : " + ", ".join(missing_tools(r))
                                + " (à installer avec pacman)")
         log("── Compilation (ça peut prendre plusieurs minutes la première fois) ──")
-        return stream(r["build"], cwd=path)
+        code = stream(r["build"], cwd=path)
+        if code == 0:
+            _, head = git(path, "rev-parse", "HEAD")
+            (path / ".git" / BUILT_MARKER).write_text(head)
+        return code
 
     def local_cmd(cmd):
         cmd = list(cmd)
@@ -630,9 +661,10 @@ def run_job(job_id, repo, action):
                 raise RuntimeError("Déjà installé.")
             REPOS_DIR.mkdir(parents=True, exist_ok=True)
             log("── Téléchargement ──")
-            # clone partiel : l'historique est complet mais les fichiers des
-            # anciennes versions ne sont téléchargés qu'à la demande
-            code = stream(["git", "clone", "--filter=blob:none", "--progress",
+            # clone superficiel : seulement la dernière version, sans l'historique.
+            # Mesuré sur AnyPS5 : 2× plus rapide et .git 4× plus léger qu'un clone partiel,
+            # et les mises à jour (fetch + merge) fonctionnent pareil
+            code = stream(["git", "clone", "--depth", "1", "--progress",
                            f"https://github.com/{repo}.git", str(path)])
             if code == 0:
                 code = build()
@@ -707,7 +739,10 @@ def stop_program(repo):
 def installed_repos():
     if not REPOS_DIR.exists():
         return []
-    return [p.name.replace("__", "/", 1) for p in REPOS_DIR.iterdir() if (p / ".git").exists()]
+    # seuls les dossiers « auteur__projet » viennent du hub ; un autre dossier rangé là
+    # (un worktree git, par exemple) n'est pas un dépôt GitHub et faisait échouer les infos
+    names = (p.name.replace("__", "/", 1) for p in REPOS_DIR.iterdir() if (p / ".git").exists())
+    return [n for n in names if REPO_RE.match(n)]
 
 
 def jobs_running():

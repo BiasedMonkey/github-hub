@@ -25,6 +25,7 @@
       "requires": ["cmake", "ninja", "g++"],
       "run": ["sh", "-c", "./build-relinker/core/relinker/relinker --help; echo; echo 'Usage : ./build-relinker/core/relinker/relinker source/input.elf app.elf'; exec \"${SHELL:-sh}\""],
       "built_check": "build-relinker/core/relinker/relinker",
+      "submodules": false,
       "terminal": true,
       "cli": ["build-relinker/core/relinker/relinker"],
       "args_hint": "/chemin/du/jeu/eboot.elf /chemin/de/sortie/jeu.elf   (ajoute --windows avant pour un .exe)",
