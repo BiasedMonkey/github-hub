@@ -95,6 +95,7 @@ class OrigineDesRequetes(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.httpd.shutdown()
+        cls.httpd.server_close()
 
     def requete(self, methode, chemin, host, corps=None):
         c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
@@ -143,6 +144,27 @@ class JetonsGitHub(unittest.TestCase):
         visibles = [k for k, v in variables.items() if "jeton-secret" in v]
         self.assertEqual(visibles, [], "jetons visibles par la compilation")
 
+
+class RepereDeCompilation(unittest.TestCase):
+    def test_compile_puis_nouveau_commit_n_est_plus_compile(self):
+        path = faux_depot("test/repere", {"Makefile": "all:\n\ttrue\n"})
+        job = attendre(server.start_job("test/repere", "build"))
+        self.assertEqual(job["state"], "ok", "\n".join(job["log"]))
+        self.assertTrue(server.local_status("test/repere")["built"])
+        nouveau_commit(path)  # ex. une mise à jour dont la recompilation a échoué
+        self.assertFalse(server.local_status("test/repere")["built"])
+
+    def test_ancien_binaire_d_un_autre_commit_ne_compte_pas(self):
+        path = faux_depot("test/binaire", {"Cargo.toml": "[package]\nname = \"binaire\"\n"})
+        binaire = path / "target" / "release" / "binaire"
+        binaire.parent.mkdir(parents=True)
+        binaire.write_text("#!/bin/sh\n")
+        binaire.chmod(0o755)
+        _, ancien = server.git(path, "rev-parse", "HEAD")
+        (path / ".git" / server.BUILT_MARKER).write_text(ancien)
+        self.assertTrue(server.local_status("test/binaire")["built"])
+        nouveau_commit(path)  # le binaire est resté, mais il vient de l'ancien commit
+        self.assertFalse(server.local_status("test/binaire")["built"])
 
 
 if __name__ == "__main__":

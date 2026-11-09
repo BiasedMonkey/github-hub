@@ -543,10 +543,15 @@ BUILT_MARKER = "github-hub-built"  # dans .git/ : invisible pour git, contient l
 def is_built(path, r):
     if not r["build"]:
         return True
+    marker = path / ".git" / BUILT_MARKER
+    if marker.exists():
+        # compilé, mais pour quel commit ? Après une mise à jour dont la recompilation
+        # a échoué, le repère (et l'ancien binaire) datent de la version d'avant
+        _, head = git(path, "rev-parse", "HEAD")
+        return marker.read_text().strip() == head and (
+            not r["built_check"] or (path / r["built_check"]).exists())
     if r["built_check"]:
         return (path / r["built_check"]).exists()
-    if (path / ".git" / BUILT_MARKER).exists():
-        return True
     # projets npm installés avant l'ajout du marqueur
     return r["build"][0] == "npm" and (path / "node_modules").is_dir()
 
