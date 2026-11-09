@@ -9,6 +9,7 @@ Variables d'environnement :
   HUB_PORT      port HTTP en mode autonome (défaut 8765)
   GITHUB_TOKEN  facultatif, relève la limite de l'API GitHub
 """
+import functools
 import html
 import json
 import os
@@ -560,7 +561,189 @@ def local_status(repo):
             "can_run": any(m != "web" for m in r["modes"]), "modes": r["modes"],
             "web": r["web"], "args_hint": r["args_hint"],
             "built": is_built(path, r),
-            "missing": missing_tools(r), "running": is_running(repo)}
+            "missing": missing_tools(r), "running": is_running(repo),
+            "size": disk_size(repo), "shortcuts": shortcut_state(repo),
+            "launchable": bool(shortcut_command(repo, path, r))}
+
+
+# ---------------------------------------------------------------- poids sur le disque
+# Dossiers produits par la compilation (jamais suivis par git) : effaçables sans risque,
+# le hub sait les reconstruire.
+BUILD_DIRS = ["target", "node_modules", "build", "build-relinker"]
+size_cache = {}       # repo -> {"total": octets, "build": octets, "t": timestamp}
+sizing = set()        # calculs en cours (en arrière-plan)
+size_lock = threading.Lock()
+
+
+def du_bytes(*paths):
+    paths = [str(p) for p in paths if Path(p).exists()]
+    if not paths:
+        return 0
+    p = subprocess.run(["du", "-sbc", *paths], capture_output=True, text=True, timeout=300)
+    last = p.stdout.strip().splitlines()[-1:] or ["0"]
+    return int(last[0].split()[0])
+
+
+def build_dirs(path):
+    """Dossiers de compilation présents ET ignorés par git (jamais un dossier du projet)."""
+    found = []
+    for name in BUILD_DIRS:
+        d = path / name
+        if d.is_dir() and not git(path, "ls-files", "--", name)[1]:
+            found.append(d)
+    return found
+
+
+def compute_size(repo):
+    path = repo_path(repo)
+    try:
+        info = {"total": du_bytes(path), "build": du_bytes(*build_dirs(path)), "t": time.time()}
+        size_cache[repo] = info
+    finally:
+        with size_lock:
+            sizing.discard(repo)
+
+
+def disk_size(repo):
+    """Poids en cache ; le calcul (du sur des Go) se fait en arrière-plan, jamais en attente."""
+    info = size_cache.get(repo)
+    if not info or time.time() - info["t"] > 15 * 60:
+        with size_lock:
+            if repo not in sizing:
+                sizing.add(repo)
+                threading.Thread(target=compute_size, args=(repo,), daemon=True).start()
+    return info
+
+
+# ---------------------------------------------------------------- raccourcis
+APPS_DIR = Path.home() / ".local" / "share" / "applications"
+ICONS_DIR = HUB_DIR / "icons"
+
+
+@functools.cache
+def desktop_dir():
+    """~/Bureau en français, ~/Desktop en anglais : c'est xdg-user-dir qui le sait."""
+    if shutil.which("xdg-user-dir"):
+        out = subprocess.run(["xdg-user-dir", "DESKTOP"], capture_output=True, text=True).stdout.strip()
+        if out:
+            return Path(out)
+    return Path.home() / "Desktop"
+
+
+def refresh_menu():
+    if shutil.which("kbuildsycoca6"):
+        subprocess.run(["kbuildsycoca6"], capture_output=True)
+
+
+def shortcut_name(repo):
+    return "github-hub-" + re.sub(r"[^A-Za-z0-9_.-]", "-", repo.replace("/", "__")) + ".desktop"
+
+
+def shortcut_state(repo):
+    name = shortcut_name(repo)
+    return {"desktop": (desktop_dir() / name).exists(), "menu": (APPS_DIR / name).exists()}
+
+
+def desktop_quote(arg):
+    """Guillemets au format .desktop (spécification freedesktop « Exec »).
+
+    Deux niveaux : la règle des guillemets d'Exec (\\" \\$ …), puis l'échappement
+    général des valeurs .desktop, qui double chaque barre oblique inverse. Et % est
+    réservé aux codes %f %u… : un % littéral s'écrit %%.
+    """
+    arg = arg.replace("%", "%%")
+    if re.fullmatch(r"[A-Za-z0-9_@%+=:,./-]+", arg):
+        return arg
+    quoted = '"' + re.sub(r'(["`$\\])', r"\\\1", arg) + '"'
+    return quoted.replace("\\", "\\\\")
+
+
+def shortcut_command(repo, path, r=None):
+    """La commande lancée par un raccourci, hors du hub : fenêtre si possible, sinon terminal."""
+    r = r or recipe(repo)
+    if not r["run"] or r["platform"] == "windows" or not is_built(path, r):
+        return None
+    cmd = list(r["run"])
+    if "/" in cmd[0] and not cmd[0].startswith("/"):
+        cmd[0] = str(path / cmd[0])
+    if "window" in r["modes"]:
+        return cmd
+    return terminal_cmd(cmd, path) if "terminal" in r["modes"] else None
+
+
+def find_icon(repo, path):
+    """Icône du projet si elle existe (hicolor, logo, icon…), sinon l'avatar de l'auteur."""
+    best, best_score = None, -1
+    for root, dirs, files in os.walk(path):
+        dirs[:] = [d for d in dirs if d not in (".git", *BUILD_DIRS, "vendor", "third_party", "3rdparty")]
+        if root.count(os.sep) - str(path).count(os.sep) > 6:
+            dirs[:] = []
+            continue
+        for f in files:
+            low = f.lower()
+            if not low.endswith((".svg", ".png")):
+                continue
+            where = (root + "/" + low).lower()
+            if not any(k in where for k in ("icon", "logo", "hicolor")) or "favicon" in low:
+                continue
+            score = (40 if "app-icon" in where or "hicolor" in where else 0) + \
+                    (30 if low.endswith(".svg") else 0) + (20 if "256" in where or "512" in where else 0) + \
+                    (10 if repo.split("/")[1].lower() in low else 0)
+            if score > best_score:
+                best, best_score = os.path.join(root, f), score
+    if best:
+        return best
+    owner = repo.split("/")[0]
+    avatar = ICONS_DIR / f"{owner}.png"
+    try:
+        if not avatar.exists():
+            ICONS_DIR.mkdir(parents=True, exist_ok=True)
+            with urllib.request.urlopen(f"https://github.com/{owner}.png?size=256", timeout=15) as resp:
+                avatar.write_bytes(resp.read())
+        return str(avatar)
+    except Exception:
+        return "application-x-executable"
+
+
+def kde_favorite(name, on):
+    """Épingle (ou retire) une appli dans les favoris du lanceur KDE, comme « Ajouter aux favoris »."""
+    if not shutil.which("qdbus6"):
+        return
+    method = "LinkResourceToActivity" if on else "UnlinkResourceFromActivity"
+    subprocess.run(["qdbus6", "org.kde.ActivityManager", "/ActivityManager/Resources/Linking",
+                    f"org.kde.ActivityManager.ResourcesLinking.{method}",
+                    "org.kde.plasma.favorites.applications", f"applications:{name}", ":global"],
+                   capture_output=True, timeout=10)
+
+
+def set_shortcut(repo, kind, on):
+    path, name = repo_path(repo), shortcut_name(repo)
+    target = (desktop_dir() if kind == "desktop" else APPS_DIR) / name
+    if not on:
+        if target.exists():
+            target.unlink()
+            if kind == "menu":
+                kde_favorite(name, False)
+                refresh_menu()
+        return
+    cmd = shortcut_command(repo, path)
+    if not cmd:
+        raise RuntimeError("Ce projet ne peut pas se lancer hors du hub (pas encore compilé, "
+                           "ou outil sans interface).")
+    entry = catalog_entry(repo)
+    meta = meta_cache.get(repo, {})
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("\n".join([
+        "[Desktop Entry]", "Type=Application",
+        f"Name={entry.get('title', repo.split('/')[1]).split(' — ')[0]}",
+        f"Comment={(entry.get('summary') or meta.get('description') or repo)[:160]}",
+        "Exec=" + " ".join(desktop_quote(a) for a in cmd),
+        f"Path={path}", f"Icon={find_icon(repo, path)}", "Terminal=false",
+        "Categories=Utility;", f"X-GitHub-Hub-Repo={repo}", ""]))
+    target.chmod(0o755)  # KDE n'exécute un raccourci du bureau que s'il est exécutable
+    if kind == "menu":
+        refresh_menu()
+        kde_favorite(name, True)
 
 
 def pull_plan(dirty, ahead, behind):
@@ -691,8 +874,18 @@ def run_job(job_id, repo, action):
             if code == 0:
                 code = launch()
         elif action == "remove":
+            for kind in ("desktop", "menu"):
+                set_shortcut(repo, kind, False)  # un raccourci vers un dossier effacé ne sert à rien
             shutil.rmtree(path)
             log(f"Supprimé : {path}")
+        elif action == "clean":
+            dirs = build_dirs(path)
+            freed = du_bytes(*dirs)
+            for d in dirs:
+                log(f"Efface {d.name}/")
+                shutil.rmtree(d)
+            (path / ".git" / BUILT_MARKER).unlink(missing_ok=True)
+            log(f"{freed / 1e9:.2f} Go libérés. Le projet sera recompilé au prochain lancement.")
         else:
             raise RuntimeError("Action inconnue.")
         job["state"] = "ok" if code == 0 else "error"
@@ -701,6 +894,7 @@ def run_job(job_id, repo, action):
         job["state"] = "error"
     finally:
         job["ended"] = time.time()
+        size_cache.pop(repo, None)  # le poids a pu changer : recalcul au prochain affichage
         with jobs_lock:
             busy_repos.discard(repo)
 
@@ -896,11 +1090,23 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/open":
             subprocess.Popen(["xdg-open", str(repo_path(repo))])
             return self.send_json({"ok": True})
+        if self.path == "/api/shortcut":
+            if data.get("kind") not in ("desktop", "menu"):
+                return self.send_json({"error": "type de raccourci inconnu"}, 400)
+            try:
+                set_shortcut(repo, data["kind"], bool(data.get("on")))
+                return self.send_json({"ok": True, "shortcuts": shortcut_state(repo)})
+            except Exception as e:
+                return self.send_json({"error": str(e)}, 400)
+        if self.path == "/api/terminal":
+            subprocess.Popen(terminal_cmd([os.environ.get("SHELL", "sh")], repo_path(repo)),
+                             start_new_session=True)
+            return self.send_json({"ok": True})
         if self.path == "/api/stop":
             stop_program(repo)
             return self.send_json({"ok": True})
         action = self.path.removeprefix("/api/")
-        if action not in ("install", "update", "build", "run", "remove"):
+        if action not in ("install", "update", "build", "run", "remove", "clean"):
             return self.send_json({"error": "introuvable"}, 404)
         opts = {"mode": data.get("mode"), "args": data.get("args", "")} if action == "run" else None
         job_id = start_job(repo, action, opts)

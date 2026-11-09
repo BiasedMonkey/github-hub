@@ -400,6 +400,7 @@ const S = {
   buzz: undefined,                                              // undefined = pas chargé, null = en cours
   search: { q: "", sort: "best", language: "", page: 1, items: [], total: 0, more: false, loading: false, error: null },
   mine: undefined, mineFilter: "all",                           // tes propres dépôts (via gh)
+  instSort: "size",                                             // tri de la vue Installés
   detail: null, checkInfo: null, menu: null,
 };
 const SOURCES = [["daily", "Aujourd'hui"], ["weekly", "Cette semaine"], ["monthly", "Ce mois"], ["new30", "Nouveaux projets"]];
@@ -409,6 +410,19 @@ let pollTimer = null;
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const k = n => n == null ? "—" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1000 ? (n / 1000).toFixed(1).replace(".0", "") + "k" : String(n);
+const bytes = n => n == null ? "—" : n >= 1e9 ? (n / 1e9).toFixed(1).replace(".", ",") + " Go"
+  : n >= 1e6 ? Math.round(n / 1e6) + " Mo" : n >= 1e3 ? Math.round(n / 1e3) + " ko" : n + " o";
+
+/* Boutons « bureau » et « menu + favoris », en entrées de menu ⋯ ou en boutons. */
+function shortcutButtons(r, style) {
+  const l = r.local, sc = l.shortcuts || {}, q = esc(r.repo), cls = style === "btn" ? "btn" : "";
+  if (!l.launchable) return style === "btn" ? "" :
+    `<div class="menu-foot" style="border:0;margin:0">Compile le projet pour créer des raccourcis.</div>`;
+  return `<button class="${cls}" data-act="shortcut" data-kind="desktop" data-on="${!sc.desktop}" data-repo="${q}">
+      ${icon("monitor")}${sc.desktop ? "Retirer du bureau" : "Raccourci sur le bureau"}</button>
+    <button class="${cls}" data-act="shortcut" data-kind="menu" data-on="${!sc.menu}" data-repo="${q}">
+      ${icon("star")}${sc.menu ? "Retirer du menu et des favoris" : "Ajouter au menu et aux favoris"}</button>`;
+}
 const api = (path, body) => fetch(path, body === undefined ? {} : {
   method: "POST", headers: {"Content-Type": "application/json", "X-Hub": "1"}, body: JSON.stringify(body)
 }).then(r => r.json());
@@ -503,6 +517,9 @@ function badges(l) {
   if (l.can_build && !l.built) b.push(`<span class="badge b-warn">Pas encore compilé</span>`);
   if (l.missing?.length) b.push(`<span class="badge b-bad">${icon("alert")} Manque : ${esc(l.missing.join(", "))}</span>`);
   if (l.dirty) b.push(`<span class="badge b-warn">Modifs locales</span>`);
+  if (l.size) b.push(`<span class="badge b-off" title="dont ${bytes(l.size.build)} de compilation">💾 ${bytes(l.size.total)}</span>`);
+  if (l.shortcuts?.desktop) b.push(`<span class="badge b-off" title="Raccourci sur le bureau">${icon("monitor")}Bureau</span>`);
+  if (l.shortcuts?.menu) b.push(`<span class="badge b-off" title="Dans le menu et les favoris KDE">${icon("star")}Menu</span>`);
   if (l.platform === "windows") b.push(`<span class="badge b-off">Windows uniquement</span>`);
   return b.join("");
 }
@@ -613,7 +630,34 @@ const VIEWS = {
     const groups = S.categories.map(c => [c, curated().filter(r => r.category === c.id)]).filter(([, l]) => l.length);
     return groups.map(([c, l]) => section(`${c.icon} ${esc(c.name)}`, l.length, grid(l))).join("");
   },
-  installed: () => S.catalog ? grid(installed(), "Aucun projet installé pour l'instant. Clique sur « Installer » sur une carte pour commencer.") : skeletons(3),
+  installed: () => {
+    if (!S.catalog) return skeletons(3);
+    const list = installed();
+    if (!list.length) return `<div class="empty">Aucun projet installé pour l'instant. Clique sur « Installer » sur une carte pour commencer.</div>`;
+    const total = list.reduce((s, r) => s + (r.local.size?.total || 0), 0);
+    const build = list.reduce((s, r) => s + (r.local.size?.build || 0), 0);
+    const pending = list.some(r => !r.local.size);
+    const sorts = [["size", "Plus lourds"], ["name", "Nom"], ["updates", "Mises à jour d'abord"]];
+    const sorted = [...list].sort({
+      size: (a, b) => (b.local.size?.total || 0) - (a.local.size?.total || 0),
+      name: (a, b) => a.repo.split("/")[1].localeCompare(b.repo.split("/")[1]),
+      updates: (a, b) => (b.local.behind > 0) - (a.local.behind > 0),
+    }[S.instSort] || (() => 0));
+    return `<div class="hero">
+        <h2>💾 Sur ton PC</h2>
+        <p>Chaque projet est rangé dans <b>~/GitHubHub/repos</b>. Les fichiers de compilation se reconstruisent
+           tout seuls : tu peux les effacer pour gagner de la place.</p>
+        <div class="stats">
+          <div class="stat"><b>${list.length}</b><span>projets installés</span></div>
+          <div class="stat"><b>${bytes(total)}${pending ? "…" : ""}</b><span>espace utilisé</span></div>
+          <div class="stat"><b>${bytes(build)}${pending ? "…" : ""}</b><span>dont compilation (effaçable)</span></div>
+          <div class="stat"><b>${list.filter(r => r.local.shortcuts?.desktop || r.local.shortcuts?.menu).length}</b><span>avec un raccourci</span></div>
+        </div>
+      </div>
+      <div class="toolbar"><div class="seg">${sorts.map(([v, l]) => `<button data-inst-sort="${v}" class="${S.instSort === v ? "on" : ""}">${l}</button>`).join("")}</div>
+        ${pending ? `<span class="sub" style="color:var(--muted);font-size:12px"><span class="spin" style="display:inline-block;vertical-align:middle;border-top-color:var(--accent)"></span> calcul des poids…</span>` : ""}</div>` +
+      grid(sorted);
+  },
   mine: () => {
     const d = S.mine;
     if (!d) return skeletons(6);
@@ -831,6 +875,15 @@ function drawDetail() {
     ${l.installed ? `<h4 class="sec">Sur ton PC</h4><div class="facts">
       <div class="fact" style="grid-column:span 2"><span>Dossier</span><b title="${esc(l.path)}">${esc(l.path)}</b></div>
       <div class="fact"><span>Version locale</span><b title="${esc(l.head?.subject)}">${esc(l.head?.sha)} · ${esc(l.head?.date)}</b></div>
+      <div class="fact"><span>Poids total</span><b>${l.size ? bytes(l.size.total) : "calcul…"}</b></div>
+      <div class="fact"><span>Dont compilation</span><b>${l.size ? bytes(l.size.build) : "calcul…"}</b></div>
+      <div class="fact"><span>Raccourcis</span><b>${[l.shortcuts?.desktop && "Bureau", l.shortcuts?.menu && "Menu + favoris"].filter(Boolean).join(" · ") || "aucun"}</b></div>
+    </div>
+    <div class="toolbar">
+      ${shortcutButtons(r, "btn")}
+      <button class="btn" data-act="terminal" data-repo="${esc(r.repo)}">${icon("terminal")}Terminal ici</button>
+      <button class="btn" data-act="copy-path" data-repo="${esc(r.repo)}">${icon("copy")}Copier le chemin</button>
+      ${l.size?.build > 0 ? `<button class="btn" data-act="clean" data-repo="${esc(r.repo)}" ${busy(r.repo) ? "disabled" : ""}>${icon("wrench")}Libérer ${bytes(l.size.build)}</button>` : ""}
     </div>` : ""}`;
 }
 
@@ -871,8 +924,14 @@ function openMenu(btn, repo) {
     ${l.installed ? `<hr>
       <button data-act="update" data-repo="${q}" ${dis}>${icon("refresh")}Mettre à jour</button>
       ${l.can_build ? `<button data-act="build" data-repo="${q}" ${dis}>${icon("wrench")}Recompiler</button>` : ""}
+      <hr><div class="menu-title">Raccourcis</div>
+      ${shortcutButtons(r, "menu")}
+      <hr><div class="menu-title">Sur ton PC</div>
       <button data-act="open" data-repo="${q}">${icon("folder")}Ouvrir le dossier</button>
-      <hr><button class="danger" data-act="remove" data-repo="${q}" ${dis}>${icon("trash")}Supprimer du PC</button>` : ""}`;
+      <button data-act="terminal" data-repo="${q}">${icon("terminal")}Terminal dans le dossier</button>
+      <button data-act="copy-path" data-repo="${q}">${icon("copy")}Copier le chemin</button>
+      ${l.size?.build > 0 ? `<button data-act="clean" data-repo="${q}" ${dis}>${icon("wrench")}Libérer ${bytes(l.size.build)} (compilation)</button>` : ""}
+      <hr><button class="danger" data-act="remove" data-repo="${q}" ${dis}>${icon("trash")}Supprimer du PC${l.size ? ` (${bytes(l.size.total)})` : ""}</button>` : ""}`;
   document.body.appendChild(m);
   const b = btn.getBoundingClientRect();
   m.style.left = Math.min(b.right - 200, innerWidth - 210) + "px";
@@ -962,9 +1021,26 @@ async function startRun(repo, mode, args = "") {
 
 /* ================= actions & tâches ================= */
 const ACTION_DONE = { install: "installé", update: "mis à jour", build: "recompilé", run: "lancé", remove: "supprimé" };
-async function act(action, repo, mode) {
+async function act(action, repo, mode, data = {}) {
   closeMenu();
   if (action === "open") return api("/api/open", {repo});
+  if (action === "terminal") return api("/api/terminal", {repo});
+  if (action === "copy-path") {
+    const path = allKnown().get(repo)?.local?.path;
+    return navigator.clipboard.writeText(path).then(() => toast("Chemin copié : " + path, "ok"));
+  }
+  if (action === "shortcut") {
+    const on = data.on === "true", where = data.kind === "desktop" ? "le bureau" : "le menu et les favoris";
+    const res = await api("/api/shortcut", {repo, kind: data.kind, on});
+    if (res.error) return toast(res.error, "err");
+    toast(on ? `Raccourci ajouté sur ${where} ✔` : `Raccourci retiré de ${where}`, "ok");
+    return loadCatalog();
+  }
+  if (action === "clean") {
+    const size = allKnown().get(repo)?.local?.size?.build;
+    if (!confirm(`Effacer les fichiers de compilation de ${repo} (${bytes(size)}) ?\n\n` +
+                 `Le code et tes réglages restent. Le projet sera recompilé tout seul au prochain lancement.`)) return;
+  }
   if (action === "run" && mode) {
     try { localStorage.setItem("hub.mode." + repo, mode); } catch (e) {}
     const l = allKnown().get(repo).local;
@@ -980,7 +1056,9 @@ async function act(action, repo, mode) {
       `Le hub va télécharger son code, le compiler et pouvoir le lancer sur ton PC. ` +
       `Les « cheats », « boosters FPS » ou « cracks » sont souvent des pièges à virus.\n\n` +
       `Continuer seulement si tu as confiance dans ce projet. Installer ?`)) return;
-  if (action === "remove" && !confirm(`Supprimer ${repo} de ton PC ?\nLe dossier local sera effacé (tu pourras le réinstaller).`)) return;
+  if (action === "remove" && !confirm(`Supprimer ${repo} de ton PC` +
+      (known?.local?.size ? ` (${bytes(known.local.size.total)})` : "") +
+      ` ?\nLe dossier local et ses raccourcis seront effacés (tu pourras le réinstaller).`)) return;
   const res = await api("/api/" + action, {repo});
   if (res.error) return toast(res.error, "err");
   if (action !== "run") { S.expanded.add(res.job); openActivity(); }
@@ -1095,6 +1173,9 @@ async function loadCatalog() {
   S.catalog = d; S.categories = d.categories; S.favs = new Set(d.favorites || []);
   if (S.detail) drawDetail();
   draw();
+  // les poids se calculent en arrière-plan côté serveur : on repasse les chercher
+  clearTimeout(S.sizeTimer);
+  if (installed().some(r => !r.local.size)) S.sizeTimer = setTimeout(loadCatalog, 2500);
 }
 // tendances générales sous la clé « daily », celles d'une catégorie sous « jeux|daily »
 const trendKey = (source, catId = "") => catId ? `${catId}|${source}` : source;
@@ -1193,12 +1274,13 @@ document.addEventListener("click", e => {
   }
   else if (d.recent) runSearch(d.recent);
   else if (d.mineFilter) { S.mineFilter = d.mineFilter; draw(); }
+  else if (d.instSort) { S.instSort = d.instSort; draw(); }
   else if ("mineRefresh" in d) loadMine(true);
   else if ("more" in d) runSearch(S.search.q, true);
   else if (d.ghSearch) { $("#search").value = ""; S.query = ""; runSearch(d.ghSearch); }
   else if (d.menu) { e.stopPropagation(); S.menu?.dataset.repo === d.menu ? closeMenu() : (openMenu(el, d.menu), S.menu.dataset.repo = d.menu); }
   else if (d.modes) { e.stopPropagation(); S.menu?.dataset.repo === "modes:" + d.modes ? closeMenu() : openModeMenu(el, d.modes); }
-  else if (d.act) { e.stopPropagation(); act(d.act, d.repo, d.mode); }
+  else if (d.act) { e.stopPropagation(); act(d.act, d.repo, d.mode, d); }
   else if (d.detailOpen) { closeMenu(); openDetail(d.detailOpen); }
   else if (d.detail) openDetail(d.detail);
   else if (d.fav) { e.stopPropagation(); closeMenu(); toggleFav(d.fav); }
