@@ -1,0 +1,1211 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GitHub Hub</title>
+<style>
+  :root {
+    --bg: #0b0e14; --bg2: #10141c; --panel: #151a23; --panel2: #1b2130; --line: #262d3b;
+    --line2: #313a4c; --text: #e7ecf3; --muted: #8a94a7; --dim: #5d6779;
+    --accent: #6d8cff; --accent2: #9b6dff; --ok: #3fb950; --warn: #e3a52f; --bad: #f2555a;
+    --radius: 14px; --shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
+         font: 14px/1.5 "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+         -webkit-font-smoothing: antialiased; }
+  svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2;
+          stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  svg.i.fill { fill: currentColor; stroke: none; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #2a3242; border-radius: 10px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ---------- structure ---------- */
+  .app { display: grid; grid-template-columns: 250px 1fr; height: 100vh; }
+  aside { background: var(--bg2); border-right: 1px solid var(--line); display: flex;
+          flex-direction: column; min-height: 0; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 20px 20px 14px; }
+  .logo { width: 38px; height: 38px; filter: drop-shadow(0 6px 14px rgba(122,92,255,.45)); }
+  .brand b { font-size: 16px; letter-spacing: .2px; }
+  .brand small { display: block; color: var(--muted); font-size: 11.5px; margin-top: -2px; }
+  .nav { overflow-y: auto; padding: 4px 12px 12px; flex: 1; }
+  .nav h6 { margin: 18px 10px 6px; font-size: 11px; font-weight: 600; letter-spacing: .08em;
+            text-transform: uppercase; color: var(--dim); }
+  .nav button { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center;
+                gap: 10px; padding: 8px 10px; border-radius: 9px; color: #c3cad6; cursor: pointer;
+                font-size: 13.5px; transition: background .12s, color .12s; }
+  .nav button:hover { background: var(--panel); color: var(--text); }
+  .nav button.active { background: linear-gradient(90deg, rgba(109,140,255,.18), rgba(109,140,255,.04));
+                       color: #fff; box-shadow: inset 2px 0 0 var(--accent); }
+  .nav .emoji { width: 18px; text-align: center; font-size: 15px; }
+  .nav .count { margin-left: auto; font-size: 11.5px; color: var(--muted); background: var(--panel2);
+                border-radius: 20px; padding: 0 8px; min-width: 22px; text-align: center; }
+  .nav .count.hot { background: rgba(227,165,47,.18); color: var(--warn); }
+  .side-foot { border-top: 1px solid var(--line); padding: 12px; display: grid; gap: 8px; }
+  .side-foot .status { font-size: 12px; color: var(--muted); padding: 0 4px; display: flex; gap: 6px; align-items: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+  .dot.warn { background: var(--warn); } .dot.busy { background: var(--accent); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .topbar { display: flex; align-items: center; gap: 12px; padding: 16px 28px; border-bottom: 1px solid var(--line);
+            background: rgba(11,14,20,.85); backdrop-filter: blur(8px); }
+  .topbar h1 { margin: 0; font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+  .topbar .sub { color: var(--muted); font-size: 12.5px; }
+  .search { margin-left: auto; position: relative; }
+  .search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--dim); }
+  .search input { width: 260px; padding-left: 34px; }
+  #content { flex: 1; overflow-y: auto; padding: 24px 28px 120px; }
+
+  /* ---------- contrôles ---------- */
+  input, select { background: var(--panel); color: var(--text); border: 1px solid var(--line2);
+                  border-radius: 10px; padding: 8px 12px; font: inherit; outline: none; }
+  input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(109,140,255,.18); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px;
+         padding: 0 14px; border-radius: 10px; border: 1px solid var(--line2); background: var(--panel2);
+         color: var(--text); font: 600 13px/1 inherit; font-family: inherit; cursor: pointer;
+         text-decoration: none; white-space: nowrap; transition: transform .08s, background .12s, border-color .12s; }
+  .btn:hover:not(:disabled) { border-color: #4a5569; background: #232a3a; }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.primary { background: linear-gradient(135deg, #5b7cff, #7a5cff); border-color: transparent; color: #fff;
+                 box-shadow: 0 4px 14px rgba(109,110,255,.3); }
+  .btn.primary:hover:not(:disabled) { filter: brightness(1.1); background: linear-gradient(135deg, #5b7cff, #7a5cff); }
+  .btn.green { background: linear-gradient(135deg, #2ea043, #3fb950); border-color: transparent; color: #fff; }
+  .btn.green:hover:not(:disabled) { filter: brightness(1.1); background: linear-gradient(135deg, #2ea043, #3fb950); }
+  .btn.warn { background: rgba(227,165,47,.14); border-color: rgba(227,165,47,.45); color: var(--warn); }
+  .btn.danger { color: var(--bad); }
+  .btn.ghost { background: transparent; }
+  .btn.icon { width: 34px; padding: 0; }
+  .btn.small { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+  .btn.block { width: 100%; }
+  .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,.3);
+          border-top-color: #fff; animation: rot .7s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  /* ---------- héro & sections ---------- */
+  .hero { position: relative; overflow: hidden; border-radius: 18px; padding: 26px 28px; margin-bottom: 28px;
+          background: radial-gradient(120% 140% at 0% 0%, rgba(109,140,255,.28), transparent 55%),
+                      radial-gradient(90% 120% at 100% 100%, rgba(155,109,255,.22), transparent 60%), var(--panel);
+          border: 1px solid var(--line); }
+  .hero h2 { margin: 0 0 4px; font-size: 24px; }
+  .hero p { margin: 0; color: #b8c1d1; max-width: 720px; }
+  .hero.cat { background: radial-gradient(120% 160% at 0% 0%, color-mix(in srgb, var(--cat) 30%, transparent), transparent 60%), var(--panel); }
+  /* ---------- gros buzz ---------- */
+  .hero.buzz { background: radial-gradient(110% 160% at 0% 0%, rgba(255,122,61,.38), transparent 58%),
+                           radial-gradient(90% 140% at 100% 100%, rgba(255,61,110,.28), transparent 60%), var(--panel);
+               border-color: rgba(255,122,61,.35); }
+  .buzz-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 12px; border-radius: 10px;
+                font-size: 12px; color: #ffd2bd; border: 1px solid rgba(255,122,61,.32);
+                background: linear-gradient(90deg, rgba(255,122,61,.16), rgba(255,61,110,.05)); }
+  .buzz-strip .rank { font-weight: 800; font-size: 14px; color: #ff8a4c; }
+  .buzz-strip .speed { font-weight: 700; color: #fff; }
+  .buzz-strip .why { margin-left: auto; font-weight: 600; color: #ff9d6c; }
+  .podium { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); margin-bottom: 26px; }
+  .podium .card { border-color: rgba(255,122,61,.4); box-shadow: 0 0 0 1px rgba(255,122,61,.12), 0 14px 40px rgba(255,90,60,.12); }
+  .podium .buzz-strip .rank { font-size: 22px; line-height: 1; }
+  .podium .buzz-strip .speed { font-size: 15px; }
+  .hero .big { font-size: 40px; position: absolute; right: 28px; top: 50%; transform: translateY(-50%); opacity: .9; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
+  .stat { background: rgba(11,14,20,.5); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .stat b { display: block; font-size: 22px; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .section { margin-bottom: 30px; }
+  .section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .section-head h3 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  .section-head .n { color: var(--muted); font-size: 12.5px; font-weight: 400; }
+  .section-head .more { margin-left: auto; }
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+  /* ---------- recherche GitHub ---------- */
+  .search-hero h2 { margin-bottom: 14px; }
+  .bigsearch { display: flex; gap: 10px; }
+  .bigsearch #ghq { flex: 1; height: 46px; font-size: 15.5px; padding: 0 16px; border-radius: 12px; }
+  .bigsearch #glang { width: 160px; height: 46px; border-radius: 12px; }
+  .bigsearch .btn { height: 46px; padding: 0 20px; border-radius: 12px; }
+  .tips, .recent { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
+  .recent { margin-top: 10px; }
+  .chip-tip { all: unset; cursor: pointer; padding: 3px 10px; border-radius: 20px; background: rgba(11,14,20,.5);
+              border: 1px solid var(--line2); color: #c3cad6; font-size: 12px; }
+  .chip-tip:hover { border-color: var(--accent); color: #fff; }
+  .chip-tip code { color: var(--muted); font-size: 11px; margin-left: 3px; }
+  .seg { display: inline-flex; background: var(--panel); border: 1px solid var(--line2); border-radius: 11px; padding: 3px; }
+  .seg button { all: unset; padding: 6px 12px; border-radius: 8px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+  .seg button.on { background: var(--panel2); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.05) inset; }
+  .empty { color: var(--muted); padding: 40px; text-align: center; border: 1px dashed var(--line2); border-radius: var(--radius); }
+
+  /* ---------- cartes ---------- */
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .card { --cat: var(--accent); position: relative; display: flex; flex-direction: column; gap: 12px;
+          padding: 18px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line);
+          cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s; overflow: hidden; }
+  .card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+                  background: linear-gradient(90deg, var(--cat), transparent); opacity: .85; }
+  .card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--cat) 45%, var(--line)); box-shadow: var(--shadow); }
+  .card-top { display: flex; gap: 12px; align-items: flex-start; }
+  .avatar { position: relative; width: 44px; height: 44px; border-radius: 11px; flex: none; overflow: hidden;
+            display: grid; place-items: center; font-weight: 800; font-size: 18px; color: #fff;
+            background: linear-gradient(135deg, color-mix(in srgb, var(--cat) 70%, #000), color-mix(in srgb, var(--cat) 35%, #000));
+            border: 1px solid var(--line2); }
+  .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .titles { min-width: 0; flex: 1; }
+  .titles .t { font-weight: 700; font-size: 15px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis;
+               display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .titles .r { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 3px 9px;
+          border-radius: 20px; white-space: nowrap; color: var(--cat);
+          background: color-mix(in srgb, var(--cat) 14%, transparent); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
+  .desc { margin: 0; color: #c2cad8; font-size: 13.5px; display: -webkit-box; -webkit-line-clamp: 3;
+          -webkit-box-orient: vertical; overflow: hidden; min-height: 3em; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { font-size: 11.5px; padding: 2px 9px; border-radius: 20px; background: var(--panel2); color: #aeb8c9; border: 1px solid var(--line2); }
+  .meta { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 12px; align-items: center; }
+  .meta span { display: inline-flex; align-items: center; gap: 5px; }
+  .meta svg.i { width: 13px; height: 13px; }
+  .lang-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .gain { color: var(--ok); font-weight: 600; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; }
+  .badge { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 20px; display: inline-flex; gap: 5px; align-items: center; }
+  .b-ok { color: var(--ok); background: rgba(63,185,80,.12); }
+  .b-warn { color: var(--warn); background: rgba(227,165,47,.12); }
+  .b-bad { color: var(--bad); background: rgba(242,85,90,.12); }
+  .b-run { color: #7ea2ff; background: rgba(109,140,255,.14); }
+  .b-off { color: var(--muted); background: var(--panel2); }
+  .actions { display: flex; gap: 8px; align-items: center; margin-top: auto; padding-top: 4px; }
+  .actions .grow { flex: 1; }
+  .menu { position: absolute; z-index: 20; min-width: 200px; background: #1d2433; border: 1px solid var(--line2);
+          border-radius: 12px; padding: 6px; box-shadow: var(--shadow); }
+  .menu button, .menu a { all: unset; box-sizing: border-box; width: 100%; display: flex; gap: 10px; align-items: center;
+                          padding: 8px 10px; border-radius: 8px; font-size: 13px; cursor: pointer; color: var(--text); }
+  .menu button:hover, .menu a:hover { background: var(--panel2); }
+  .menu .danger { color: var(--bad); }
+  .menu.modes { min-width: 280px; }
+  .menu-title { padding: 6px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--dim); }
+  .menu-foot { padding: 6px 10px 4px; font-size: 11.5px; color: var(--dim); border-top: 1px solid var(--line2); margin-top: 4px; }
+  .menu .mi { flex: 1; font-weight: 600; }
+  .menu .mi small { display: block; font-weight: 400; color: var(--muted); font-size: 11.5px; }
+  .menu .tick { color: var(--ok); }
+  /* favoris : cœur rose rempli quand le projet est dans les favoris */
+  .btn.fav.on { color: #ff6b9a; border-color: rgba(255,107,154,.45); background: rgba(255,107,154,.1); }
+  .btn.fav.on svg.i, .menu .fav-on svg.i { fill: currentColor; }
+  .btn.fav.pop svg.i { animation: pop .35s ease-out; }
+  @keyframes pop { 40% { transform: scale(1.35); } }
+  .menu .fav-on { color: #ff6b9a; }
+  /* bouton « Lancer » + flèche de choix du mode, collés */
+  .split { display: inline-flex; }
+  .split .btn:first-child:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .split .caret { width: 30px; padding: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; box-shadow: inset 1px 0 0 rgba(0,0,0,.25); }
+  .split .caret svg.i { width: 14px; height: 14px; }
+  /* formulaire « Dans le hub » */
+  .dialog-wrap { position: fixed; inset: 0; z-index: 50; background: rgba(5,7,12,.6); backdrop-filter: blur(3px);
+                 display: grid; place-items: center; animation: fade .15s; }
+  @keyframes fade { from { opacity: 0; } }
+  .dialog { width: min(620px, 92vw); background: var(--bg2); border: 1px solid var(--line2); border-radius: 18px;
+            padding: 22px 24px; box-shadow: var(--shadow); }
+  .dialog-head { display: flex; gap: 14px; align-items: center; margin-bottom: 18px; }
+  .dialog-head h3 { margin: 0; font-size: 18px; }
+  .dialog-head span { color: var(--muted); font-size: 12.5px; }
+  .dialog label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+  .dialog textarea { width: 100%; resize: vertical; background: #07090e; color: var(--text); border: 1px solid var(--line2);
+                     border-radius: 10px; padding: 10px 12px; font: 13px/1.5 "JetBrains Mono", ui-monospace, monospace; outline: none; }
+  .dialog textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(109,140,255,.18); }
+  .dialog code { font-size: 12px; }
+  .dialog-tools { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .dialog-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+  .menu hr { border: 0; border-top: 1px solid var(--line2); margin: 5px 0; }
+
+  /* ---------- panneau de détails ---------- */
+  .overlay { position: fixed; inset: 0; background: rgba(5,7,12,.6); backdrop-filter: blur(3px); z-index: 30;
+             opacity: 0; pointer-events: none; transition: opacity .2s; }
+  .overlay.open { opacity: 1; pointer-events: auto; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(860px, 92vw); z-index: 31; background: var(--bg2);
+            border-left: 1px solid var(--line); display: flex; flex-direction: column; transform: translateX(100%);
+            transition: transform .25s cubic-bezier(.2,.8,.2,1); box-shadow: -20px 0 60px rgba(0,0,0,.45); }
+  .drawer.open { transform: none; }
+  .drawer-head { --cat: var(--accent); padding: 24px 28px 18px; border-bottom: 1px solid var(--line);
+                 background: radial-gradient(120% 180% at 0% 0%, color-mix(in srgb, var(--cat) 22%, transparent), transparent 60%); }
+  .drawer-head .row { display: flex; gap: 16px; align-items: center; }
+  .drawer-head .avatar { width: 64px; height: 64px; border-radius: 16px; }
+  .drawer-head h2 { margin: 0; font-size: 22px; }
+  .drawer-head .close { margin-left: auto; align-self: flex-start; }
+  .drawer-body { overflow-y: auto; padding: 22px 28px 40px; flex: 1; }
+  .drawer .actions { flex-wrap: wrap; margin-top: 16px; }
+  .lead { font-size: 14.5px; color: #cdd5e2; margin: 0 0 14px; }
+  .hint { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 10px; font-size: 13px; margin: 0 0 12px; }
+  .hint.info { background: rgba(109,140,255,.1); color: #b9c8ff; border: 1px solid rgba(109,140,255,.25); }
+  .hint.warn { background: rgba(227,165,47,.08); color: var(--warn); border: 1px solid rgba(227,165,47,.3); }
+  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 16px 0 20px; }
+  .fact { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; min-width: 0; }
+  .fact span { display: block; color: var(--muted); font-size: 11.5px; }
+  .fact b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  .readme-frame { width: 100%; border: 1px solid var(--line); border-radius: var(--radius); background: #0f131b; min-height: 420px; }
+  h4.sec { margin: 22px 0 10px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+
+  /* ---------- panneau Activité (à droite, à côté du contenu) ---------- */
+  .app.with-activity { grid-template-columns: 250px 1fr 380px; }
+  .activity { display: none; flex-direction: column; min-height: 0; background: var(--bg2); border-left: 1px solid var(--line); }
+  .app.with-activity .activity { display: flex; animation: slidein .2s ease-out; }
+  @keyframes slidein { from { transform: translateX(30px); opacity: 0; } }
+  .act-head { display: flex; align-items: center; gap: 8px; padding: 18px 16px 14px 20px; border-bottom: 1px solid var(--line); }
+  .act-head b { font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .act-head small { display: block; color: var(--muted); font-size: 12px; }
+  .act-head .grow { flex: 1; }
+  .act-list { overflow-y: auto; padding: 14px; display: grid; gap: 10px; align-content: start; flex: 1; }
+  .act-empty { text-align: center; color: var(--muted); padding: 50px 20px; font-size: 13px; }
+  .act-empty svg.i { width: 34px; height: 34px; color: var(--dim); margin-bottom: 10px; }
+  .job { --c: var(--accent); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .job.ok { --c: var(--ok); } .job.error { --c: var(--bad); border-color: rgba(242,85,90,.35); }
+  .job-top { display: flex; gap: 10px; align-items: center; padding: 12px 12px 10px; cursor: pointer; }
+  .job-top .avatar { width: 34px; height: 34px; border-radius: 9px; font-size: 14px; --cat: var(--c); }
+  .job-title { flex: 1; min-width: 0; }
+  .job-title b { font-size: 13.5px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job-title span { color: var(--muted); font-size: 12px; }
+  .job-state { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; flex: none;
+               color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent); }
+  .job-state svg.i { width: 14px; height: 14px; }
+  .job-state .spin { border-color: color-mix(in srgb, var(--c) 30%, transparent); border-top-color: var(--c); }
+  .progress { height: 4px; margin: 0 12px; border-radius: 4px; background: var(--panel2); overflow: hidden; }
+  .progress i { display: block; height: 100%; background: linear-gradient(90deg, #5b7cff, #9b6dff); border-radius: 4px; transition: width .3s; }
+  .progress.indet i { width: 35%; animation: indet 1.2s ease-in-out infinite; }
+  @keyframes indet { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+  .job-last { padding: 8px 12px 12px; color: var(--muted); font: 11.5px/1.4 "JetBrains Mono", ui-monospace, monospace;
+              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .job-log { margin: 0 12px 10px; max-height: 340px; overflow: auto; padding: 10px 12px; border-radius: 9px; background: #07090e;
+             border: 1px solid var(--line); color: #b9c3d3; font: 11.5px/1.5 "JetBrains Mono", ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+  .job-tools { display: flex; gap: 6px; padding: 0 12px 12px; }
+  .act-btn { position: relative; }
+  .act-btn .num { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+                  background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+  .act-btn.on { border-color: var(--accent); background: rgba(109,140,255,.12); }
+  .side-foot .status { cursor: pointer; border-radius: 8px; padding: 6px; }
+  .side-foot .status:hover { background: var(--panel); color: var(--text); }
+  .toasts { position: fixed; right: 20px; bottom: 20px; z-index: 40; display: grid; gap: 10px; transition: right .2s; }
+  .app.with-activity ~ .toasts { right: 400px; }
+  .toast { display: flex; gap: 10px; align-items: center; min-width: 280px; max-width: 420px; padding: 12px 14px;
+           border-radius: 12px; background: #1d2433; border: 1px solid var(--line2); box-shadow: var(--shadow);
+           animation: tin .25s ease-out; font-size: 13px; }
+  .toast.ok { border-left: 3px solid var(--ok); } .toast.err { border-left: 3px solid var(--bad); }
+  @keyframes tin { from { transform: translateY(10px); opacity: 0; } }
+  .skeleton { height: 230px; border-radius: var(--radius); background: linear-gradient(90deg, var(--panel) 0%, var(--panel2) 50%, var(--panel) 100%);
+              background-size: 200% 100%; animation: shimmer 1.2s infinite; border: 1px solid var(--line); }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand">
+      <img class="logo" src="/logo.svg" alt="">
+      <div><b>GitHub Hub</b><small>Tes projets, en un clic</small></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot">
+      <div class="status" id="sideStatus"><span class="dot"></span>Prêt</div>
+      <button class="btn green block" id="updateAll"></button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="pageTitle"></h1>
+        <div class="sub" id="pageSub"></div>
+      </div>
+      <div class="search"><span id="searchIcon"></span><input id="search" placeholder="Filtrer, ou Entrée pour GitHub…"
+        title="Tape pour filtrer ce qui est affiché ; Entrée pour chercher sur tout GitHub"></div>
+      <button class="btn icon" id="check" title="Vérifier les mises à jour"></button>
+      <button class="btn act-btn" id="activityBtn" title="Téléchargements, compilations et journaux"></button>
+    </div>
+    <div id="content"></div>
+  </div>
+
+  <section class="activity" id="activity">
+    <div class="act-head">
+      <div><b id="actTitle"></b><small id="actSub"></small></div>
+      <span class="grow"></span>
+      <button class="btn small ghost" id="clearDone">Effacer terminées</button>
+      <button class="btn icon ghost" id="closeActivity" title="Fermer"></button>
+    </div>
+    <div class="act-list" id="actList"></div>
+  </section>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head" id="drawerHead"></div>
+  <div class="drawer-body">
+    <div id="drawerInfo"></div>
+    <h4 class="sec">README</h4>
+    <iframe class="readme-frame" id="readme" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* ================= icônes ================= */
+const ICONS = {
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  external: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+  fork: '<circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M6 9v1a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V9"/><path d="M12 12v3"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+  flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  box: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+  terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  activity: '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>',
+  panel: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  scale: '<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>',
+  github: null,
+};
+const GH_PATH = "M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z";
+const icon = (n, cls = "") => n === "github"
+  ? `<svg class="i fill ${cls}" viewBox="0 0 16 16"><path d="${GH_PATH}"/></svg>`
+  : `<svg class="i ${cls}" viewBox="0 0 24 24">${ICONS[n]}</svg>`;
+
+const LANG_COLORS = { Rust: "#dea584", Python: "#3572A5", TypeScript: "#3178c6", JavaScript: "#f1e05a",
+  "C++": "#f34b7d", C: "#8a8a8a", Go: "#00ADD8", Java: "#b07219", CSS: "#663399", HTML: "#e34c26",
+  Shell: "#89e051", Kotlin: "#A97BFF", Swift: "#F05138", "C#": "#178600", Lua: "#5c6bc0", Zig: "#ec915c",
+  Dart: "#00B4AB", Vue: "#41b883", Svelte: "#ff3e00", Ruby: "#701516", PHP: "#4F5D95", "Jupyter Notebook": "#DA5B0B" };
+
+/* ================= état ================= */
+const S = {
+  view: "home", source: "daily", language: "", query: "",
+  catalog: null, categories: [], trending: {}, jobs: [],
+  activityOpen: false, expanded: new Set(), hidden: new Set(),  // panneau Activité
+  favs: new Set(), popFav: null,                                // favoris (enregistrés par le serveur)
+  buzz: undefined,                                              // undefined = pas chargé, null = en cours
+  search: { q: "", sort: "best", language: "", page: 1, items: [], total: 0, more: false, loading: false, error: null },
+  detail: null, checkInfo: null, menu: null,
+};
+const SOURCES = [["daily", "Aujourd'hui"], ["weekly", "Cette semaine"], ["monthly", "Ce mois"], ["new30", "Nouveaux projets"]];
+let pollTimer = null;
+
+/* ================= utilitaires ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const k = n => n == null ? "—" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1000 ? (n / 1000).toFixed(1).replace(".0", "") + "k" : String(n);
+const api = (path, body) => fetch(path, body === undefined ? {} : {
+  method: "POST", headers: {"Content-Type": "application/json", "X-Hub": "1"}, body: JSON.stringify(body)
+}).then(r => r.json());
+function ago(iso) {
+  if (!iso) return "";
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 3600) return `il y a ${Math.max(1, Math.round(s / 60))} min`;
+  if (s < 86400) return `il y a ${Math.round(s / 3600)} h`;
+  if (s < 86400 * 30) return `il y a ${Math.round(s / 86400)} j`;
+  if (s < 86400 * 365) return `il y a ${Math.round(s / 86400 / 30)} mois`;
+  return `il y a ${Math.round(s / 86400 / 365)} an(s)`;
+}
+const cat = id => S.categories.find(c => c.id === id) || {id: "autres", name: "Autres", icon: "📦", color: "#8b949e"};
+const busy = repo => S.jobs.some(j => j.repo === repo && j.state === "running");
+const prettyName = n => n.replace(/[-_]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+// initiale en fond, photo GitHub par-dessus ; si la photo ne charge pas, l'initiale reste
+const avatar = (owner, size) => `<div class="avatar"><span>${esc(owner[0].toUpperCase())}</span>
+  <img loading="lazy" src="https://github.com/${esc(owner)}.png?size=${size}" alt="" onerror="this.remove()"></div>`;
+
+/* Un dépôt du catalogue ou des tendances, ramené à une seule forme. */
+function norm(r) {
+  const [owner, name] = r.repo.split("/");
+  return { ...r, owner, name, title: r.title || prettyName(name),
+           text: r.summary || r.description || "Pas de description.",
+           tagList: (r.tags?.length ? r.tags : (r.topics || [])).slice(0, 6), local: r.local || {} };
+}
+const allKnown = () => {
+  const m = new Map();
+  Object.values(S.trending).forEach(d => d?.items?.forEach(i => m.set(i.repo, i)));
+  S.buzz?.items?.forEach(i => m.set(i.repo, i));
+  S.search.items.forEach(i => m.set(i.repo, i));
+  S.catalog?.repos.forEach(r => m.set(r.repo, r));
+  return m;
+};
+const curated = () => (S.catalog?.repos || []).filter(r => r.curated);
+const installed = () => (S.catalog?.repos || []).filter(r => r.local?.installed);
+// dans l'ordre d'ajout ; un projet tout juste ajouté depuis les tendances est déjà connu ici
+const favList = () => { const known = allKnown(); return [...S.favs].map(r => known.get(r)).filter(Boolean); };
+const favButton = repo => {
+  const on = S.favs.has(repo);
+  return `<button class="btn icon fav ${on ? "on" : ""} ${S.popFav === repo ? "pop" : ""}" data-fav="${esc(repo)}"
+    title="${on ? "Retirer des favoris" : "Ajouter aux favoris"}">${icon("heart")}</button>`;
+};
+const MEDALS = ["🥇", "🥈", "🥉"];
+const heat = n => "🔥".repeat(n >= 2000 ? 5 : n >= 1000 ? 4 : n >= 500 ? 3 : n >= 250 ? 2 : 1);
+function buzzStrip(b) {
+  return `<div class="buzz-strip" title="Vitesse : étoiles gagnées par jour (moyenne depuis la création, ou gain récent si plus fort)">
+    <span class="rank">${b.rank <= 3 ? MEDALS[b.rank - 1] : "#" + b.rank}</span>
+    <span class="speed">≈ ${k(b.per_day)} ★ / jour</span>
+    ${b.age_days ? `<span>créé il y a ${b.age_days} j</span>` : ""}
+    ${b.week ? `<span>+${k(b.week)} ★ cette semaine</span>` : ""}
+    <span class="why">${heat(b.per_day)} ${esc(b.reason)}</span>
+  </div>`;
+}
+
+async function toggleFav(repo) {
+  const on = !S.favs.has(repo), name = repo.split("/")[1];
+  on ? S.favs.add(repo) : S.favs.delete(repo);  // affiché tout de suite, enregistré ensuite
+  S.popFav = on ? repo : null;
+  draw();
+  const res = await api("/api/favorite", {repo, on, category: allKnown().get(repo)?.category})
+    .catch(e => ({error: String(e)}));
+  S.popFav = null;
+  if (res.error) {
+    on ? S.favs.delete(repo) : S.favs.add(repo);
+    draw();
+    return toast("Favori non enregistré : " + res.error, "err");
+  }
+  toast(on ? `${name} ajouté aux favoris ❤` : `${name} retiré des favoris`, "ok");
+  loadCatalog();
+}
+const trendItems = () => S.trending[S.source]?.items || [];
+function matches(r) {
+  if (!S.query) return true;
+  const q = S.query.toLowerCase();
+  return [r.repo, r.title, r.summary, r.description, ...(r.tags || []), ...(r.topics || []), r.language]
+    .some(v => (v || "").toLowerCase().includes(q));
+}
+
+/* ================= cartes ================= */
+function badges(l) {
+  const b = [];
+  if (!l.installed) {
+    if (l.platform === "windows") b.push(`<span class="badge b-off">Windows uniquement</span>`);
+    return b.join("");
+  }
+  if (l.running) b.push(`<span class="badge b-run">● En cours d'exécution</span>`);
+  if (l.behind > 0) b.push(`<span class="badge b-warn">${icon("download")} Mise à jour dispo</span>`);
+  else if (l.behind === 0) b.push(`<span class="badge b-ok">${icon("check")} Installé · à jour</span>`);
+  else b.push(`<span class="badge b-ok">${icon("check")} Installé</span>`);
+  if (l.can_build && !l.built) b.push(`<span class="badge b-warn">Pas encore compilé</span>`);
+  if (l.missing?.length) b.push(`<span class="badge b-bad">${icon("alert")} Manque : ${esc(l.missing.join(", "))}</span>`);
+  if (l.dirty) b.push(`<span class="badge b-warn">Modifs locales</span>`);
+  if (l.platform === "windows") b.push(`<span class="badge b-off">Windows uniquement</span>`);
+  return b.join("");
+}
+
+/* Modes de lancement (le serveur dit lesquels existent pour chaque projet). */
+const MODES = {
+  window: { icon: "monitor", label: "Fenêtre", desc: "L'interface graphique de l'appli" },
+  terminal: { icon: "terminal", label: "Terminal", desc: "Dans Konsole, avec tous les messages" },
+  hub: { icon: "panel", label: "Dans le hub", desc: "Un formulaire pour l'outil, résultat dans Activité" },
+  web: { icon: "globe", label: "Version web", desc: "Dans ton navigateur, sans rien installer" },
+};
+const modesOf = l => l.modes?.length ? l.modes : (l.web ? ["web"] : []);
+function preferredMode(repo, l) {
+  let saved = null;
+  try { saved = localStorage.getItem("hub.mode." + repo); } catch (e) {}
+  const modes = modesOf(l).filter(m => l.installed || m === "web");
+  return modes.includes(saved) ? saved : modes[0];
+}
+
+function primaryButton(r) {
+  const l = r.local, repo = esc(r.repo);
+  if (busy(r.repo)) return `<button class="btn primary" disabled><span class="spin"></span>En cours…</button>`;
+  if (!l.installed) return `<button class="btn primary" data-act="install" data-repo="${repo}">${icon("download")}${l.platform === "windows" ? "Télécharger" : "Installer"}</button>` +
+    (l.web ? `<button class="btn icon" title="Essayer la version web, sans installer" data-act="run" data-mode="web" data-repo="${repo}">${icon("globe")}</button>` : "");
+  if (l.running) return `<button class="btn danger" data-act="stop" data-repo="${repo}">${icon("stop")}Arrêter</button>`;
+  if (l.can_run) {
+    const m = preferredMode(r.repo, l), many = modesOf(l).length > 1;
+    const label = m === "web" ? "Version web" : l.built ? "Lancer" : "Compiler et lancer";
+    return `<span class="split"><button class="btn green" data-act="run" data-mode="${m}" data-repo="${repo}" title="Mode : ${MODES[m].label}">${icon(MODES[m].icon)}${label}</button>` +
+      (many ? `<button class="btn green caret" data-modes="${repo}" title="Choisir comment lancer">${icon("chevron")}</button>` : "") + `</span>`;
+  }
+  return `<button class="btn" data-act="update" data-repo="${repo}">${icon("refresh")}Mettre à jour</button>`;
+}
+
+function card(raw) {
+  const r = norm(raw), c = cat(r.category), l = r.local;
+  return `<div class="card" style="--cat:${c.color}" data-detail="${esc(r.repo)}">
+    <div class="card-top">
+      ${avatar(r.owner, 88)}
+      <div class="titles"><div class="t">${esc(r.title)}</div><div class="r">${esc(r.repo)}</div></div>
+      <span class="pill">${c.icon} ${esc(c.name)}</span>
+    </div>
+    ${r.buzz ? buzzStrip(r.buzz) : ""}
+    <p class="desc">${esc(r.text)}</p>
+    ${r.tagList.length ? `<div class="tags">${r.tagList.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
+    <div class="meta">
+      <span title="Étoiles">${icon("star")}${k(r.stars)}</span>
+      ${r.forks != null ? `<span title="Forks">${icon("fork")}${k(r.forks)}</span>` : ""}
+      ${r.language ? `<span><i class="lang-dot" style="background:${LANG_COLORS[r.language] || "#8b949e"}"></i>${esc(r.language)}</span>` : ""}
+      ${r.gained ? `<span class="gain">+${k(r.gained)} ★ ${S.source === "weekly" ? "cette semaine" : S.source === "monthly" ? "ce mois" : "aujourd'hui"}</span>` : ""}
+      ${r.pushed_at ? `<span title="Dernière activité">${icon("clock")}${ago(r.pushed_at)}</span>` : ""}
+    </div>
+    ${l.installed || l.platform ? `<div class="badges">${badges(l)}</div>` : ""}
+    <div class="actions">
+      ${primaryButton(r)}
+      ${l.installed && l.behind > 0 && l.can_run && !busy(r.repo) ? `<button class="btn warn icon" title="Mettre à jour" data-act="update" data-repo="${esc(r.repo)}">${icon("refresh")}</button>` : ""}
+      <span class="grow"></span>
+      ${favButton(r.repo)}
+      <a class="btn icon" title="Ouvrir sur GitHub" href="https://github.com/${esc(r.repo)}" target="_blank">${icon("github")}</a>
+      <button class="btn icon" title="Plus d'actions" data-menu="${esc(r.repo)}">${icon("more")}</button>
+    </div>
+  </div>`;
+}
+
+const grid = (items, empty = "Rien à afficher ici.") => {
+  const list = items.filter(matches);
+  return list.length ? `<div class="grid">${list.map(card).join("")}</div>`
+                     : `<div class="empty">${S.query ? "Aucun résultat ici pour « " + esc(S.query) + " »." +
+                         `<br><br><button class="btn primary" data-gh-search="${esc(S.query)}">${icon("search")}Chercher « ${esc(S.query)} » sur tout GitHub</button>` : empty}</div>`;
+};
+const skeletons = n => `<div class="grid">${"<div class='skeleton'></div>".repeat(n)}</div>`;
+const section = (title, n, body, more = "") =>
+  `<div class="section"><div class="section-head"><h3>${title}${n != null ? ` <span class="n">${n}</span>` : ""}</h3>${more ? `<span class="more">${more}</span>` : ""}</div>${body}</div>`;
+const sourceSwitch = () => `<div class="seg">${SOURCES.map(([v, l]) => `<button data-source="${v}" class="${S.source === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
+const trendToolbar = () => `<div class="toolbar">${sourceSwitch()}
+  <input id="lang" placeholder="Langage : Rust, Python…" value="${esc(S.language)}" style="width:200px">
+  <span class="sub" style="color:var(--muted);font-size:12px">Source : github.com/trending · infos via l'API GitHub</span></div>`;
+
+/* ================= vues ================= */
+const VIEWS = {
+  home: () => {
+    const inst = installed(), upd = inst.filter(r => r.local.behind > 0).length,
+          run = inst.filter(r => r.local.running).length, trend = trendItems();
+    return `<div class="hero">
+        <h2>Bienvenue 👋</h2>
+        <p>Installe, lance et mets à jour les projets GitHub du moment en un clic. Tout est compilé et rangé sur ton PC, dans <b>~/GitHubHub</b>.</p>
+        <div class="stats">
+          <div class="stat"><b>${inst.length}</b><span>projets installés</span></div>
+          <div class="stat"><b style="color:${upd ? "var(--warn)" : "inherit"}">${upd}</b><span>mises à jour disponibles</span></div>
+          <div class="stat"><b style="color:${run ? "#7ea2ff" : "inherit"}">${run}</b><span>en cours d'exécution</span></div>
+          <div class="stat"><b>${trend.length || "…"}</b><span>projets en tendance</span></div>
+        </div>
+      </div>` +
+      section("🚀 Le gros buzz du moment", null, S.buzz?.items ? `<div class="podium">${S.buzz.items.slice(0, 3).map(card).join("")}</div>`
+                : S.buzz?.error ? `<div class="empty">⏳ ${esc(S.buzz.error)}</div>` : skeletons(3),
+              `<button class="btn small ghost" data-view="buzz">Tout le classement</button>`) +
+      (favList().length ? section("❤️ Mes favoris", favList().length, grid(favList().slice(0, 6)),
+              favList().length > 6 ? `<button class="btn small ghost" data-view="favorites">Tout voir</button>` : "") : "") +
+      section("⭐ Ma sélection", curated().length, S.catalog ? grid(curated()) : skeletons(3),
+              `<button class="btn small ghost" data-view="selection">Tout voir</button>`) +
+      section("🔥 En tendance aujourd'hui", null, S.trending.daily ? grid(S.trending.daily.items.slice(0, 6)) : skeletons(3),
+              `<button class="btn small ghost" data-view="trending">Toutes les tendances</button>`);
+  },
+  selection: () => {
+    if (!S.catalog) return skeletons(6);
+    const groups = S.categories.map(c => [c, curated().filter(r => r.category === c.id)]).filter(([, l]) => l.length);
+    return groups.map(([c, l]) => section(`${c.icon} ${esc(c.name)}`, l.length, grid(l))).join("");
+  },
+  installed: () => S.catalog ? grid(installed(), "Aucun projet installé pour l'instant. Clique sur « Installer » sur une carte pour commencer.") : skeletons(3),
+  search: () => {
+    const s = S.search;
+    const sorts = [["best", "Pertinence"], ["stars", "Plus d'étoiles"], ["updated", "Mis à jour récemment"]];
+    const tips = [["language:rust", "un langage"], ["stars:>1000", "plus de 1 000 ★"], ["topic:emulator", "un sujet"],
+                  ["user:storytold", "un auteur"], ["pushed:>2026-09-01", "actif récemment"], ["in:readme", "dans le README"]];
+    const recent = recentSearches();
+    let body;
+    if (s.loading && !s.items.length) body = skeletons(6);
+    else if (s.error && !s.items.length) body = `<div class="empty">⏳ ${esc(s.error)}</div>`;
+    else if (!s.q) body = `<div class="empty">Cherche n'importe quel projet parmi les millions de dépôts de GitHub.<br>
+      Exemples : <b>ps2 emulator</b>, <b>éditeur vidéo</b> + langage Rust, <b>topic:3d-printing stars:>500</b>.</div>`;
+    else body = section(`${k(s.total)} résultat(s) pour « ${esc(s.q)} »`, null, grid(s.items, "Aucun dépôt ne correspond.")) +
+      (s.more ? `<div style="text-align:center"><button class="btn" data-more ${s.loading ? "disabled" : ""}>${s.loading ? `<span class="spin"></span>` : icon("chevron")}Plus de résultats</button></div>` : "") +
+      (s.error ? `<div class="empty" style="margin-top:12px">⏳ ${esc(s.error)}</div>` : "");
+    return `<div class="hero search-hero">
+        <h2>🔎 Chercher sur GitHub</h2>
+        <div class="bigsearch">
+          <input id="ghq" placeholder="Nom, sujet, mots-clés… (syntaxe GitHub acceptée)" value="${esc(s.q)}" autocomplete="off">
+          <input id="glang" placeholder="Langage" value="${esc(s.language)}">
+          <button class="btn primary" data-gogh>${icon("search")}Rechercher</button>
+        </div>
+        <div class="toolbar" style="margin:12px 0 0">
+          <div class="seg">${sorts.map(([v, l]) => `<button data-gsort="${v}" class="${s.sort === v ? "on" : ""}">${l}</button>`).join("")}</div>
+          <span class="tips">Filtres : ${tips.map(([t, l]) => `<button class="chip-tip" data-qtip="${t}" title="Ajouter ${t}">${l} <code>${t}</code></button>`).join("")}</span>
+        </div>
+        ${recent.length ? `<div class="recent">Récentes : ${recent.map(q => `<button class="chip-tip" data-recent="${esc(q)}">${esc(q)}</button>`).join("")}</div>` : ""}
+      </div>` + body;
+  },
+  buzz: () => {
+    const d = S.buzz;
+    const hero = `<div class="hero buzz"><span class="big">🚀</span>
+        <h2>Les phénomènes de GitHub</h2>
+        <p>Les dépôts qui explosent en ce moment, classés par <b>étoiles gagnées par jour</b> : nouveaux phénomènes,
+        explosions de la semaine et cartons de l'année.</p></div>`;
+    if (!d) return hero + skeletons(6);
+    if (d.error) return hero + `<div class="empty">⏳ ${esc(d.error)}</div>`;
+    const items = d.items.filter(matches);
+    return hero +
+      section("🏆 Le podium", null, `<div class="podium">${items.slice(0, 3).map(card).join("")}</div>`) +
+      section("📈 Le classement", items.length > 3 ? items.length - 3 : null, grid(items.slice(3)));
+  },
+  favorites: () => S.catalog ? grid(favList(),"Pas encore de favoris. Clique sur le ❤ d'une carte pour garder un projet ici, même quand il n'est plus en tendance.") : skeletons(3),
+  trending: () => {
+    const d = S.trending[S.source];
+    if (!d) return trendToolbar() + skeletons(9);
+    if (d.error) return trendToolbar() + `<div class="empty">⏳ ${esc(d.error)}</div>`;
+    const groups = S.categories.map(c => [c, d.items.filter(i => i.category === c.id)]).filter(([, l]) => l.length);
+    return trendToolbar() + groups.map(([c, l]) => section(`${c.icon} ${esc(c.name)}`, l.length, grid(l),
+      `<button class="btn small ghost" data-view="cat:${c.id}">Voir la catégorie</button>`)).join("");
+  },
+  category: id => {
+    const c = cat(id), mine = curated().filter(r => r.category === id);
+    const d = S.trending[trendKey(S.source, id)], picked = new Set(mine.map(r => r.repo));
+    const trend = d?.items?.filter(i => !picked.has(i.repo)) || [];
+    const body = !d ? skeletons(6)
+      : d.error ? `<div class="empty">⏳ ${esc(d.error)}</div>`
+      : grid(trend, "Rien trouvé pour cette période. Essaie « Ce mois ».");
+    return `<div class="hero cat" style="--cat:${c.color}"><span class="big">${c.icon}</span>
+        <h2>${esc(c.name)}</h2><p>${esc(CAT_BLURB[id] || "")}</p></div>` +
+      (mine.length ? section("⭐ Ma sélection", mine.length, grid(mine)) : "") +
+      section("🔥 En tendance", d?.items ? trend.length : null, trendToolbar() +
+        `<p class="sub" style="color:var(--muted);margin:-8px 0 16px;font-size:12.5px">Les tendances GitHub de la catégorie d'abord (avec les étoiles gagnées), puis les projets récents les plus étoilés sur ses sujets.</p>` + body);
+  },
+};
+const CAT_BLURB = {
+  jeux: "Émulateurs, portages de jeux, moteurs et outils de modding.",
+  ia: "Agents, modèles, assistants de code et outils autour des LLM.",
+  creation: "Vidéo, photo, audio, design : des alternatives libres aux logiciels pro.",
+  securite: "Rétro-ingénierie, audit, protection de la vie privée.",
+  outils: "Applis du quotidien, utilitaires, auto-hébergement et système.",
+  dev: "Frameworks, bibliothèques, langages et outils pour développeurs.",
+  autres: "Tout ce qui ne rentre dans aucune case.",
+};
+const TITLES = {
+  home: ["Accueil", "Vue d'ensemble de tes projets"],
+  selection: ["Ma sélection", "Les projets choisis pour toi, avec leur recette d'installation"],
+  favorites: ["Favoris", "Les projets que tu as gardés de côté"],
+  buzz: ["Gros buzz", "Les dépôts qui font l'actualité de GitHub"],
+  search: ["Recherche GitHub", "Tout GitHub, directement depuis le hub"],
+  installed: ["Installés", "Ce qui est déjà sur ton PC"],
+  trending: ["Tendances GitHub", "Les dépôts qui gagnent le plus d'étoiles en ce moment"],
+};
+
+function drawNav() {
+  const trend = trendItems(), inst = installed(), upd = inst.filter(r => r.local.behind > 0).length;
+  const count = id => {
+    const mine = curated().filter(r => r.category === id), own = S.trending[trendKey(S.source, id)]?.items;
+    const extra = (own || trend.filter(i => i.category === id)).filter(i => !mine.some(r => r.repo === i.repo));
+    return mine.length + extra.length;
+  };
+  const item = (view, ico, label, n, hot) => `<button data-view="${view}" class="${S.view === view ? "active" : ""}">
+      <span class="emoji">${ico}</span>${label}${n ? `<span class="count ${hot ? "hot" : ""}">${n}</span>` : ""}</button>`;
+  $("#nav").innerHTML =
+    `<h6>Bibliothèque</h6>` +
+    item("home", icon("home"), "Accueil") +
+    item("favorites", icon("heart"), "Favoris", S.favs.size) +
+    item("selection", icon("star"), "Ma sélection", curated().length) +
+    item("installed", icon("box"), "Installés", inst.length + (upd ? ` · ${upd}↑` : ""), upd) +
+    `<h6>Découvrir</h6>` +
+    item("search", icon("search"), "Recherche GitHub", S.search.total ? k(S.search.total) : "") +
+    item("buzz", "🚀", "Gros buzz", S.buzz?.items?.length) +
+    item("trending", icon("flame"), "Toutes les tendances", trend.length) +
+    S.categories.map(c => item("cat:" + c.id, c.icon, esc(c.name), count(c.id))).join("");
+}
+
+function draw() {
+  drawNav();
+  const [view, arg] = S.view.split(":");
+  const [title, sub] = view === "cat" ? [cat(arg).name, CAT_BLURB[arg] || ""] : TITLES[view];
+  $("#pageTitle").textContent = title;
+  $("#pageSub").textContent = sub;
+  const content = $("#content"), top = content.scrollTop;
+  // le contenu est reconstruit : on garde ce qui est en cours de saisie dans ses champs
+  const typed = [...content.querySelectorAll("input")].map(i => [i.id, i.value]);
+  const focused = document.activeElement?.closest?.("#content") && document.activeElement.id;
+  const caret = focused && [document.activeElement.selectionStart, document.activeElement.selectionEnd];
+  content.innerHTML = view === "cat" ? VIEWS.category(arg) : VIEWS[view]();
+  content.scrollTop = top;
+  typed.forEach(([id, v]) => { const i = id && document.getElementById(id); if (i) i.value = v; });
+  if (focused) { const i = document.getElementById(focused); if (i) { i.focus(); i.setSelectionRange?.(...caret); } }
+  const lang = $("#lang");
+  if (lang) lang.onkeydown = e => { if (e.key === "Enter") { S.language = lang.value.trim(); S.trending = {}; loadTrending(); } };
+  const ghq = $("#ghq"), glang = $("#glang");
+  if (ghq) ghq.onkeydown = e => { if (e.key === "Enter") runSearch(ghq.value); };
+  if (glang) glang.onkeydown = e => { if (e.key === "Enter") runSearch(ghq.value); };
+  if (S.detail) drawDetail();
+  drawSide();
+}
+
+function drawSide() {
+  const running = S.jobs.filter(j => j.state === "running").length;
+  const upd = installed().filter(r => r.local.behind > 0).length;
+  $("#sideStatus").innerHTML = running ? `<span class="dot busy"></span>${running} tâche(s) en cours…`
+    : upd ? `<span class="dot warn"></span>${upd} mise(s) à jour disponible(s)`
+    : `<span class="dot"></span>${S.checkInfo || "Prêt"}`;
+}
+
+/* ================= panneau de détails ================= */
+function openDetail(repo) {
+  S.detail = repo;
+  $("#overlay").classList.add("open");
+  $("#drawer").classList.add("open");
+  drawDetail();
+  loadReadme(repo);
+}
+function closeDetail() {
+  S.detail = null;
+  $("#overlay").classList.remove("open");
+  $("#drawer").classList.remove("open");
+}
+function drawDetail() {
+  const raw = allKnown().get(S.detail);
+  if (!raw) return;
+  const r = norm(raw), c = cat(r.category), l = r.local, repo = esc(r.repo);
+  $("#drawerHead").style.setProperty("--cat", c.color);
+  $("#drawerHead").innerHTML = `<div class="row">
+      ${avatar(r.owner, 128)}
+      <div><h2>${esc(r.title)}</h2><div class="sub" style="color:var(--muted)">${repo}</div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><span class="pill" style="--cat:${c.color}">${c.icon} ${esc(c.name)}</span>${badges(l)}</div></div>
+      <button class="btn icon ghost close" id="closeDetail">${icon("x")}</button>
+    </div>
+    <div class="actions">
+      ${primaryButton(r)}
+      ${l.installed && !busy(r.repo) ? `<button class="btn ${l.behind > 0 ? "warn" : ""}" data-act="update" data-repo="${repo}">${icon("refresh")}Mettre à jour</button>` : ""}
+      <button class="btn fav ${S.favs.has(r.repo) ? "on" : ""}" data-fav="${repo}">${icon("heart")}${S.favs.has(r.repo) ? "Dans tes favoris" : "Ajouter aux favoris"}</button>
+      <a class="btn" href="https://github.com/${repo}" target="_blank">${icon("github")}Voir sur GitHub</a>
+      ${r.homepage ? `<a class="btn" href="${esc(r.homepage)}" target="_blank">${icon("globe")}Site web</a>` : ""}
+      ${l.installed ? `<button class="btn icon" title="Ouvrir le dossier" data-act="open" data-repo="${repo}">${icon("folder")}</button>` : ""}
+      ${l.installed && l.can_build ? `<button class="btn icon" title="Recompiler" data-act="build" data-repo="${repo}" ${busy(r.repo) ? "disabled" : ""}>${icon("wrench")}</button>` : ""}
+      ${l.installed ? `<button class="btn icon danger" title="Supprimer" data-act="remove" data-repo="${repo}" ${busy(r.repo) ? "disabled" : ""}>${icon("trash")}</button>` : ""}
+    </div>`;
+  $("#closeDetail").onclick = closeDetail;
+  $("#drawerInfo").innerHTML = `
+    <p class="lead">${esc(r.text)}</p>
+    ${r.summary && r.description ? `<p style="color:var(--muted);margin:-6px 0 14px;font-size:13px">« ${esc(r.description)} »</p>` : ""}
+    ${r.launch_hint ? `<div class="hint info">${icon("info")}<span>${esc(r.launch_hint)}</span></div>` : ""}
+    ${modesOf(l).length > 1 || (!l.installed && l.web) ? `<h4 class="sec" style="margin-top:4px">Lancer avec</h4><div class="toolbar">${
+      modesOf(l).filter(m => l.installed || m === "web").map(m => `<button class="btn" data-act="run" data-mode="${m}" data-repo="${esc(r.repo)}"
+        ${busy(r.repo) || (l.running && m !== "web") ? "disabled" : ""} title="${MODES[m].desc}">${icon(MODES[m].icon)}${MODES[m].label}</button>`).join("")}</div>` : ""}
+    ${r.warning ? `<div class="hint warn">${icon("alert")}<span>${esc(r.warning)}</span></div>` : ""}
+    ${!r.curated ? `<div class="hint warn">${icon("alert")}<span>Projet non vérifié : jette un œil au README et à la réputation de l'auteur avant de l'installer. Méfie-toi des cheats, boosters et cracks.</span></div>` : ""}
+    ${r.tagList.length || r.topics?.length ? `<div class="tags">${[...new Set([...r.tagList, ...(r.topics || [])])].map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>` : ""}
+    <div class="facts">
+      <div class="fact"><span>Étoiles</span><b>★ ${k(r.stars)}${r.gained ? ` <small class="gain">+${k(r.gained)}</small>` : ""}</b></div>
+      <div class="fact"><span>Forks</span><b>${k(r.forks)}</b></div>
+      <div class="fact"><span>Langage</span><b>${r.language ? `<i class="lang-dot" style="background:${LANG_COLORS[r.language] || "#8b949e"}"></i> ${esc(r.language)}` : "—"}</b></div>
+      <div class="fact"><span>Licence</span><b>${esc(r.license && r.license !== "NOASSERTION" ? r.license : "—")}</b></div>
+      <div class="fact"><span>Dernière activité</span><b>${esc(ago(r.pushed_at) || "—")}</b></div>
+      <div class="fact"><span>Tickets ouverts</span><b>${k(r.issues)}</b></div>
+    </div>
+    ${l.installed ? `<h4 class="sec">Sur ton PC</h4><div class="facts">
+      <div class="fact" style="grid-column:span 2"><span>Dossier</span><b title="${esc(l.path)}">${esc(l.path)}</b></div>
+      <div class="fact"><span>Version locale</span><b title="${esc(l.head?.subject)}">${esc(l.head?.sha)} · ${esc(l.head?.date)}</b></div>
+    </div>` : ""}`;
+}
+
+const README_CSS = `body{margin:0;padding:24px 28px;background:#0f131b;color:#d5dce8;font:14px/1.6 "Inter","Segoe UI",system-ui,sans-serif}
+a{color:#7ea2ff}img{max-width:100%;height:auto}h1,h2,h3{border-bottom:1px solid #262d3b;padding-bottom:.3em;color:#fff}
+pre,code{background:#151a23;border-radius:6px;font-family:ui-monospace,monospace;font-size:12.5px}code{padding:2px 5px}
+pre{padding:12px 14px;overflow:auto}table{border-collapse:collapse;display:block;overflow:auto}td,th{border:1px solid #262d3b;padding:6px 10px}
+blockquote{margin:0;padding:0 14px;border-left:3px solid #313a4c;color:#8a94a7}hr{border:0;border-top:1px solid #262d3b}
+.anchor,.octicon-link{display:none}details{margin:8px 0}`;
+async function loadReadme(repo) {
+  const frame = $("#readme");
+  frame.srcdoc = `<style>${README_CSS}</style><p style="color:#8a94a7">Chargement du README…</p>`;
+  const res = await api(`/api/readme?repo=${encodeURIComponent(repo)}`);
+  if (S.detail !== repo) return;
+  frame.srcdoc = `<base href="https://github.com/" target="_blank"><style>${README_CSS}</style>` +
+    (res.html || `<p style="color:#8a94a7">README indisponible${res.error ? " : " + esc(res.error) : ""}.</p>`);
+  // le README n'exécute aucun script (sandbox) ; on ajuste la hauteur depuis ici, images comprises
+  frame.onload = () => {
+    const doc = frame.contentDocument;
+    if (!doc?.body) return;
+    const fit = () => frame.style.height = doc.documentElement.scrollHeight + 4 + "px";
+    fit();
+    new ResizeObserver(fit).observe(doc.body);
+  };
+}
+
+/* ================= menu ⋯ ================= */
+function openMenu(btn, repo) {
+  closeMenu();
+  const r = norm(allKnown().get(repo)), l = r.local, q = esc(repo), dis = busy(repo) ? "disabled" : "";
+  const m = document.createElement("div");
+  m.className = "menu";
+  m.innerHTML = `
+    <button data-detail-open="${q}">${icon("info")}Détails et README</button>
+    <button data-fav="${q}" class="${S.favs.has(repo) ? "fav-on" : ""}">${icon("heart")}${S.favs.has(repo) ? "Retirer des favoris" : "Ajouter aux favoris"}</button>
+    <a href="https://github.com/${q}" target="_blank">${icon("github")}Ouvrir sur GitHub</a>
+    ${r.homepage ? `<a href="${esc(r.homepage)}" target="_blank">${icon("globe")}Site web du projet</a>` : ""}
+    ${l.installed ? `<hr>
+      <button data-act="update" data-repo="${q}" ${dis}>${icon("refresh")}Mettre à jour</button>
+      ${l.can_build ? `<button data-act="build" data-repo="${q}" ${dis}>${icon("wrench")}Recompiler</button>` : ""}
+      <button data-act="open" data-repo="${q}">${icon("folder")}Ouvrir le dossier</button>
+      <hr><button class="danger" data-act="remove" data-repo="${q}" ${dis}>${icon("trash")}Supprimer du PC</button>` : ""}`;
+  document.body.appendChild(m);
+  const b = btn.getBoundingClientRect();
+  m.style.left = Math.min(b.right - 200, innerWidth - 210) + "px";
+  const top = b.bottom + 6;
+  m.style.top = (top + m.offsetHeight > innerHeight ? b.top - m.offsetHeight - 6 : top) + "px";
+  S.menu = m;
+}
+function closeMenu() { S.menu?.remove(); S.menu = null; }
+
+/* ================= menu des modes de lancement ================= */
+function openModeMenu(btn, repo) {
+  closeMenu();
+  const l = allKnown().get(repo).local, cur = preferredMode(repo, l);
+  const m = document.createElement("div");
+  m.className = "menu modes";
+  m.innerHTML = `<div class="menu-title">Lancer avec…</div>` + modesOf(l).map(id => `
+    <button data-act="run" data-mode="${id}" data-repo="${esc(repo)}">${icon(MODES[id].icon)}
+      <span class="mi">${MODES[id].label}<small>${MODES[id].desc}</small></span>
+      ${id === cur ? `<span class="tick">${icon("check")}</span>` : ""}</button>`).join("") +
+    `<div class="menu-foot">Ton choix devient le mode par défaut de ce projet.</div>`;
+  document.body.appendChild(m);
+  const b = btn.getBoundingClientRect();
+  m.style.left = Math.max(10, Math.min(b.left - 180, innerWidth - 290)) + "px";
+  const top = b.bottom + 6;
+  m.style.top = (top + m.offsetHeight > innerHeight ? b.top - m.offsetHeight - 6 : top) + "px";
+  m.dataset.repo = "modes:" + repo;
+  S.menu = m;
+}
+
+/* ================= formulaire « Dans le hub » ================= */
+function openHubDialog(repo) {
+  const r = norm(allKnown().get(repo)), l = r.local;
+  let last = "";
+  try { last = localStorage.getItem("hub.args." + repo) || ""; } catch (e) {}
+  const dlg = document.createElement("div");
+  dlg.className = "dialog-wrap";
+  dlg.innerHTML = `<div class="dialog" style="--cat:${cat(r.category).color}">
+      <div class="dialog-head">${avatar(r.owner, 64)}<div><h3>Lancer ${esc(r.title)}</h3>
+        <span>L'outil tourne dans le hub ; son résultat s'affiche dans le panneau Activité.</span></div></div>
+      <label for="hubArgs">Arguments</label>
+      <textarea id="hubArgs" rows="3" spellcheck="false" placeholder="${esc(l.args_hint || "arguments de la commande")}">${esc(last)}</textarea>
+      ${l.args_hint ? `<div class="hint info" style="margin-top:10px">${icon("info")}<span>Exemple : <code>${esc(l.args_hint)}</code></span></div>` : ""}
+      <div class="dialog-tools">
+        <button class="btn small" data-pick="open">${icon("folder")}Insérer un fichier…</button>
+        <button class="btn small" data-pick="save">${icon("download")}Choisir un fichier de sortie…</button>
+      </div>
+      <div class="dialog-foot">
+        <button class="btn ghost" data-close>Annuler</button>
+        <button class="btn green" data-go>${icon("play")}Lancer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(dlg);
+  const args = dlg.querySelector("#hubArgs");
+  args.focus();
+  const close = () => dlg.remove();
+  dlg.addEventListener("click", async e => {
+    if (e.target === dlg) return close();  // clic à côté de la fenêtre
+    const b = e.target.closest("button");
+    if (!b) return;
+    if ("close" in b.dataset) return close();
+    if (b.dataset.pick) {
+      // la fenêtre de choix de fichier de KDE s'ouvre côté système et renvoie un vrai chemin
+      b.disabled = true;
+      const res = await api("/api/pick", {save: b.dataset.pick === "save"});
+      b.disabled = false;
+      if (res.path) args.value = (args.value.trim() + " " + quoteArg(res.path)).trim();
+      args.focus();
+    } else if ("go" in b.dataset) {
+      try { localStorage.setItem("hub.args." + repo, args.value); } catch (e) {}
+      close();
+      startRun(repo, "hub", args.value);
+    }
+  });
+  dlg.addEventListener("keydown", e => {
+    if (e.key === "Escape") close();
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) dlg.querySelector("[data-go]").click();
+  });
+}
+const quoteArg = p => /^[\w@%+=:,./-]+$/.test(p) ? p : `'${p.replace(/'/g, `'\\''`)}'`;
+
+async function startRun(repo, mode, args = "") {
+  const res = await api("/api/run", {repo, mode, args});
+  if (res.error) return toast(res.error, "err");
+  if (mode === "hub") { S.expanded.add(res.job); openActivity(); }
+  await pollJobs();
+}
+
+/* ================= actions & tâches ================= */
+const ACTION_DONE = { install: "installé", update: "mis à jour", build: "recompilé", run: "lancé", remove: "supprimé" };
+async function act(action, repo, mode) {
+  closeMenu();
+  if (action === "open") return api("/api/open", {repo});
+  if (action === "run" && mode) {
+    try { localStorage.setItem("hub.mode." + repo, mode); } catch (e) {}
+    const l = allKnown().get(repo).local;
+    if (mode === "web") { window.open(l.web, "_blank"); return draw(); }
+    if (mode === "hub") { draw(); return openHubDialog(repo); }
+    draw();
+    return startRun(repo, mode);
+  }
+  if (action === "stop") { await api("/api/stop", {repo}); toast(`${repo} arrêté.`, "ok"); return setTimeout(loadCatalog, 500); }
+  if (action === "install" && !allKnown().get(repo)?.curated && !confirm(
+      `${repo} ne fait pas partie de ta sélection vérifiée.\n\n` +
+      `Le hub va télécharger son code, le compiler et pouvoir le lancer sur ton PC. ` +
+      `Les « cheats », « boosters FPS » ou « cracks » sont souvent des pièges à virus.\n\n` +
+      `Continuer seulement si tu as confiance dans ce projet. Installer ?`)) return;
+  if (action === "remove" && !confirm(`Supprimer ${repo} de ton PC ?\nLe dossier local sera effacé (tu pourras le réinstaller).`)) return;
+  const res = await api("/api/" + action, {repo});
+  if (res.error) return toast(res.error, "err");
+  if (action !== "run") { S.expanded.add(res.job); openActivity(); }
+  await pollJobs();
+}
+
+async function pollJobs() {
+  const before = new Map(S.jobs.map(j => [j.id, j.state]));
+  S.jobs = await api("/api/jobs");
+  let finished = false;
+  for (const j of S.jobs) {
+    if (before.get(j.id) === "running" && j.state !== "running") {
+      finished = true;
+      if (j.state === "ok") toast(`${j.repo.split("/")[1]} ${ACTION_DONE[j.action] || "terminé"} ✔`, "ok");
+      else { toast(`Échec : ${ACTION_LABEL[j.action] || j.action} de ${j.repo.split("/")[1]}`, "err"); S.expanded.add(j.id); openActivity(); }
+    }
+  }
+  const running = S.jobs.some(j => j.state === "running");
+  if (finished) loadCatalog(); else if (running && ![...before.values()].includes("running")) draw();
+  drawActivity();
+  drawSide();
+  clearTimeout(pollTimer);
+  if (running) pollTimer = setTimeout(pollJobs, 800);
+}
+
+/* ================= panneau Activité ================= */
+const ACTION_LABEL = { install: "Installation", update: "Mise à jour", build: "Compilation", run: "Lancement", remove: "Suppression" };
+
+/* Où en est une tâche, d'après les lignes de son journal. */
+function jobProgress(j) {
+  const log = j.log, last = [...log].reverse().find(l => l.trim()) || "";
+  const compiling = log.some(l => l.startsWith("── Compilation"));
+  const crates = log.filter(l => /^\s*Compiling /.test(l)).length;
+  const pct = !compiling && [...log].reverse().map(l => l.match(/(\d{1,3})\s?%/)).find(Boolean);
+  let phase = ACTION_LABEL[j.action] || j.action;
+  if (j.state === "ok") phase = { install: "Installé", update: "Mis à jour", build: "Compilé", run: "Lancé", remove: "Supprimé" }[j.action] || "Terminé";
+  else if (j.state === "error") phase = "Échec";
+  else if (compiling) phase = crates ? `Compilation · ${crates} modules` : "Compilation…";
+  else if (j.action === "install") phase = "Téléchargement…";
+  return { phase, last, pct: pct ? Math.min(100, +pct[1]) : null };
+}
+function duration(j) {
+  const s = Math.round(((j.ended || Date.now() / 1000) - j.started));
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")}`;
+}
+
+function drawActivity() {
+  const jobs = S.jobs.filter(j => !S.hidden.has(j.id));
+  const running = S.jobs.filter(j => j.state === "running").length;
+  const btn = $("#activityBtn");
+  btn.innerHTML = (running ? `<span class="spin" style="border-top-color:var(--accent)"></span>` : icon("activity")) + "Activité" +
+                  (running ? `<span class="num">${running}</span>` : "");
+  btn.classList.toggle("on", S.activityOpen);
+  $("#actTitle").innerHTML = icon("activity") + "Activité";
+  $("#actSub").textContent = running ? `${running} en cours · ${jobs.length - running} terminée(s)` : jobs.length ? `${jobs.length} tâche(s) récente(s)` : "Rien en cours";
+  $("#clearDone").style.display = jobs.some(j => j.state !== "running") ? "" : "none";
+  if (!S.activityOpen) return;
+  const list = $("#actList");
+  // on garde la position de lecture des journaux ouverts pendant le rafraîchissement
+  const scroll = {};
+  list.querySelectorAll(".job-log").forEach(p => scroll[p.dataset.id] = [p.scrollTop, p.scrollTop + p.clientHeight >= p.scrollHeight - 30]);
+  if (!jobs.length) {
+    list.innerHTML = `<div class="act-empty">${icon("activity")}<br>Aucune tâche pour l'instant.<br>Les installations, mises à jour et compilations s'afficheront ici.</div>`;
+    return;
+  }
+  list.innerHTML = jobs.map(j => {
+    const p = jobProgress(j), owner = j.repo.split("/")[0], open = S.expanded.has(j.id);
+    const state = j.state === "running" ? `<span class="spin"></span>` : icon(j.state === "ok" ? "check" : "alert");
+    return `<div class="job ${j.state}">
+      <div class="job-top" data-job="${j.id}">
+        ${avatar(owner, 64)}
+        <div class="job-title"><b>${esc(j.repo.split("/")[1])}</b><span>${esc(p.phase)} · ${duration(j)}</span></div>
+        <span class="job-state">${state}</span>
+      </div>
+      ${j.state === "running" ? `<div class="progress ${p.pct == null ? "indet" : ""}"><i style="${p.pct == null ? "" : `width:${p.pct}%`}"></i></div>` : ""}
+      ${open ? `<pre class="job-log" data-id="${j.id}">${esc(j.log.join("\n") || "…")}</pre>
+        <div class="job-tools">
+          <button class="btn small" data-copy="${j.id}">${icon("copy")}Copier le journal</button>
+          ${j.action !== "remove" ? `<button class="btn small" data-act="open" data-repo="${esc(j.repo)}">${icon("folder")}Dossier</button>` : ""}
+          <span style="flex:1"></span>
+          <button class="btn small ghost" data-job="${j.id}">Replier</button>
+        </div>`
+      : `<div class="job-last" data-job="${j.id}" title="Cliquer pour voir le journal complet">${esc(p.last || "…")}</div>`}
+    </div>`;
+  }).join("");
+  list.querySelectorAll(".job-log").forEach(p => {
+    const [top, atBottom] = scroll[p.dataset.id] || [0, true];
+    p.scrollTop = atBottom ? p.scrollHeight : top;
+  });
+}
+
+function openActivity(open = true) {
+  S.activityOpen = open;
+  document.querySelector(".app").classList.toggle("with-activity", open);
+  try { localStorage.setItem("hub.activity", open ? "1" : "0"); } catch (e) {}
+  drawActivity();
+}
+
+function toast(msg, kind = "ok") {
+  const t = document.createElement("div");
+  t.className = "toast " + kind;
+  t.innerHTML = (kind === "ok" ? icon("check") : icon("alert")) + `<span>${esc(msg)}</span>`;
+  $("#toasts").appendChild(t);
+  setTimeout(() => t.remove(), 5000);
+}
+
+/* ================= chargement ================= */
+async function loadCatalog() {
+  const d = await api("/api/catalog");
+  S.catalog = d; S.categories = d.categories; S.favs = new Set(d.favorites || []);
+  if (S.detail) drawDetail();
+  draw();
+}
+// tendances générales sous la clé « daily », celles d'une catégorie sous « jeux|daily »
+const trendKey = (source, catId = "") => catId ? `${catId}|${source}` : source;
+const viewCat = () => S.view.startsWith("cat:") ? S.view.slice(4) : "";
+async function loadTrending(source = S.source, catId = viewCat()) {
+  const key = trendKey(source, catId);
+  if (key in S.trending) return;  // déjà chargé ou en cours
+  S.trending[key] = null;
+  draw();
+  const q = `/api/trending?source=${source}&language=${encodeURIComponent(S.language)}` +
+            (catId ? `&category=${catId}` : "");
+  const d = await api(q).catch(e => ({error: String(e), retry: true}));
+  S.trending[key] = d;
+  if (d.error) setTimeout(() => {
+    delete S.trending[key];  // l'erreur n'est pas gardée : on retente
+    if (trendKey(S.source, viewCat()) === key || (key === S.source && S.view === "trending")) loadTrending(source, catId);
+  }, d.retry ? 60000 : 15000);
+  if (d.categories) S.categories = d.categories;
+  draw();
+}
+function recentSearches() {
+  try { return JSON.parse(localStorage.getItem("hub.recent") || "[]"); } catch (e) { return []; }
+}
+async function runSearch(q = S.search.q, append = false) {
+  const s = S.search;
+  q = (q || "").trim();
+  if (!q) return $("#ghq")?.focus();
+  s.language = ($("#glang")?.value ?? s.language).trim();
+  s.q = q;
+  if ($("#ghq")) $("#ghq").value = q;  // ex. clic sur une recherche récente
+  if (append) s.page++; else Object.assign(s, {page: 1, items: [], total: 0, more: false});
+  s.loading = true; s.error = null;
+  if (S.view !== "search") { S.view = "search"; closeDetail(); $("#content").scrollTop = 0; }
+  draw();
+  try { localStorage.setItem("hub.recent", JSON.stringify([q, ...recentSearches().filter(x => x !== q)].slice(0, 8))); } catch (e) {}
+  const url = `/api/search?q=${encodeURIComponent(q)}&sort=${s.sort}&language=${encodeURIComponent(s.language)}&page=${s.page}`;
+  const d = await api(url).catch(e => ({error: String(e)}));
+  if (s.q !== q) return;  // une autre recherche a été lancée entre-temps
+  s.loading = false;
+  if (d.error) { s.error = d.error; if (append) s.page--; }
+  else {
+    s.items = append ? s.items.concat(d.items) : d.items;
+    s.total = d.total; s.more = d.more;
+    if (d.categories) S.categories = d.categories;
+  }
+  draw();
+}
+
+async function loadBuzz() {
+  if (S.buzz !== undefined) return;  // déjà chargé ou en cours
+  S.buzz = null;
+  draw();
+  const d = await api("/api/buzz").catch(e => ({error: String(e), retry: true}));
+  S.buzz = d;
+  if (d.error) setTimeout(() => {
+    S.buzz = undefined;
+    if (S.view === "buzz" || S.view === "home") loadBuzz();
+  }, d.retry ? 60000 : 15000);
+  draw();
+}
+async function checkUpdates() {
+  const b = $("#check");
+  b.disabled = true; b.innerHTML = `<span class="spin"></span>`;
+  const res = await api("/api/check", {});
+  const n = Object.values(res).filter(s => s.behind > 0).length;
+  S.checkInfo = Object.keys(res).length ? (n ? null : "Tout est à jour") : "Prêt";
+  if (n) toast(`${n} mise(s) à jour disponible(s)`, "ok");
+  b.disabled = false; b.innerHTML = icon("refresh");
+  loadCatalog();
+}
+
+/* ================= évènements ================= */
+document.addEventListener("click", e => {
+  const el = e.target.closest("button, a, .card");
+  if (S.menu && !e.target.closest(".menu") && !e.target.closest("[data-menu], [data-modes]")) closeMenu();
+  if (!el || el.tagName === "A") { if (el?.tagName === "A") closeMenu(); return; }
+  const d = el.dataset;
+  if (d.view) { S.view = d.view; closeDetail(); if (S.view === "trending" || viewCat()) loadTrending(); else if (S.view === "home") loadTrending("daily", "");
+    if (S.view === "buzz" || S.view === "home") loadBuzz(); draw(); $("#content").scrollTop = 0; }
+  else if (d.source) { S.source = d.source; loadTrending(); draw(); }
+  else if ("gogh" in d) runSearch($("#ghq").value);
+  else if (d.gsort) { S.search.sort = d.gsort; S.search.q ? runSearch($("#ghq").value || S.search.q) : draw(); }
+  else if (d.qtip) {
+    const box = $("#ghq");
+    box.value = (box.value.trim() + " " + d.qtip).trim() + " ";
+    box.focus();
+  }
+  else if (d.recent) runSearch(d.recent);
+  else if ("more" in d) runSearch(S.search.q, true);
+  else if (d.ghSearch) { $("#search").value = ""; S.query = ""; runSearch(d.ghSearch); }
+  else if (d.menu) { e.stopPropagation(); S.menu?.dataset.repo === d.menu ? closeMenu() : (openMenu(el, d.menu), S.menu.dataset.repo = d.menu); }
+  else if (d.modes) { e.stopPropagation(); S.menu?.dataset.repo === "modes:" + d.modes ? closeMenu() : openModeMenu(el, d.modes); }
+  else if (d.act) { e.stopPropagation(); act(d.act, d.repo, d.mode); }
+  else if (d.detailOpen) { closeMenu(); openDetail(d.detailOpen); }
+  else if (d.detail) openDetail(d.detail);
+  else if (d.fav) { e.stopPropagation(); closeMenu(); toggleFav(d.fav); }
+  else if (d.copy) {
+    const j = S.jobs.find(x => x.id === d.copy);
+    navigator.clipboard.writeText(j.log.join("\n")).then(() => toast("Journal copié.", "ok"));
+  }
+});
+// clic sur l'en-tête ou la dernière ligne d'une tâche : déplier / replier son journal
+$("#actList").addEventListener("click", e => {
+  const el = e.target.closest("[data-job]");
+  if (!el) return;
+  const id = el.dataset.job;
+  S.expanded.has(id) ? S.expanded.delete(id) : S.expanded.add(id);
+  drawActivity();
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") { closeMenu(); closeDetail(); } });
+$("#overlay").onclick = closeDetail;
+$("#content").addEventListener("scroll", closeMenu);
+$("#activityBtn").onclick = () => openActivity(!S.activityOpen);
+$("#closeActivity").onclick = () => openActivity(false);
+$("#sideStatus").onclick = () => openActivity(true);
+$("#clearDone").onclick = () => { S.jobs.filter(j => j.state !== "running").forEach(j => S.hidden.add(j.id)); drawActivity(); };
+$("#check").onclick = checkUpdates;
+$("#search").oninput = e => { S.query = e.target.value.trim(); draw(); };
+// Entrée dans le filtre du haut : la même saisie part en recherche sur tout GitHub
+$("#search").onkeydown = e => {
+  if (e.key !== "Enter" || !e.target.value.trim()) return;
+  const q = e.target.value.trim();
+  e.target.value = ""; S.query = "";
+  runSearch(q);
+};
+$("#updateAll").onclick = async () => {
+  const res = await api("/api/update-all", {});
+  if (!res.jobs.length) return toast("Rien à mettre à jour pour l'instant.", "ok");
+  openActivity(); pollJobs();
+};
+// l'état « lancé / arrêté » des programmes change hors du hub : on le relit
+setInterval(() => { if (!document.hidden && !S.menu && !S.jobs.some(j => j.state === "running")) loadCatalog(); }, 20000);
+
+$("#searchIcon").innerHTML = icon("search");
+$("#check").innerHTML = icon("refresh");
+$("#updateAll").innerHTML = icon("download") + "Tout mettre à jour";
+$("#closeActivity").innerHTML = icon("x");
+let wasOpen = false;
+try { wasOpen = localStorage.getItem("hub.activity") === "1"; } catch (e) {}
+openActivity(wasOpen);
+draw();
+loadCatalog().then(checkUpdates);
+loadTrending("daily");
+loadBuzz();
+pollJobs();
+</script>
+</body>
+</html>

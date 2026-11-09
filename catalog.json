@@ -1,0 +1,136 @@
+{
+  "repos": [
+    {
+      "repo": "morluto/rea",
+      "category": "securite",
+      "title": "REA — Reverse Engineer Anything",
+      "summary": "Donne à un agent IA (Claude Code, Codex…) les outils d'un rétro-ingénieur : il pilote Ghidra, IDA ou Hopper pour les binaires natifs, et sait aussi décortiquer les applis JavaScript / Electron et .NET. Fonctionne en serveur MCP ou en ligne de commande.",
+      "tags": ["Agent IA", "MCP", "Ghidra / IDA", "Electron", ".NET", "CLI"],
+      "warning": "Un faux REA contenant un trojan a circulé : n'installe que morluto/rea.",
+      "launch_hint": "« Lancer » ouvre l'assistant de configuration dans un terminal.",
+      "build": ["npm", "install"],
+      "run": ["node", "scripts/rea.mjs", "setup"],
+      "terminal": true,
+      "cli": ["node", "scripts/rea.mjs"],
+      "args_hint": "analyze-javascript-application /chemin/vers/une/appli --json"
+    },
+    {
+      "repo": "boykopovar/AnyPS5",
+      "category": "jeux",
+      "title": "AnyPS5 — jeux PS5 vers PC",
+      "summary": "Au lieu d'émuler la console, AnyPS5 « reconvertit » l'exécutable d'un jeu PS5 en programme natif Linux ou Windows, en remplaçant les bibliothèques système de Sony par les siennes. Très prometteur mais encore expérimental : seuls quelques titres sont vérifiés jouables.",
+      "tags": ["PS5", "Portage natif", "C++", "Linux / Windows", "Expérimental"],
+      "launch_hint": "« Lancer » ouvre un terminal avec l'outil relinker et son mode d'emploi.",
+      "build": ["sh", "-c", "cmake -S . -B build-relinker -G Ninja -DCMAKE_BUILD_TYPE=Release -DANYPS5_RELINKER_ONLY=ON && cmake --build build-relinker --parallel"],
+      "requires": ["cmake", "ninja", "g++"],
+      "run": ["sh", "-c", "./build-relinker/core/relinker/relinker --help; echo; echo 'Usage : ./build-relinker/core/relinker/relinker source/input.elf app.elf'; exec \"${SHELL:-sh}\""],
+      "built_check": "build-relinker/core/relinker/relinker",
+      "terminal": true,
+      "cli": ["build-relinker/core/relinker/relinker"],
+      "args_hint": "/chemin/du/jeu/eboot.elf /chemin/de/sortie/jeu.elf   (ajoute --windows avant pour un .exe)",
+      "web": "https://boykopovar.github.io/AnyPS5/",
+      "default_mode": "hub"
+    },
+    {
+      "repo": "InoriRus/Kyty",
+      "category": "jeux",
+      "title": "Kyty — émulateur PS4 / PS5",
+      "summary": "Un des premiers émulateurs PS4 et PS5. Il fait tourner quelques jeux PS4 simples et des homebrews PS5, à faible fréquence d'images. Le développement est au ralenti depuis 2024.",
+      "tags": ["Émulateur", "PS4", "PS5", "Windows"],
+      "launch_hint": "Ne se compile que sous Windows : le hub le télécharge et le tient à jour, sans le lancer.",
+      "platform": "windows"
+    },
+    {
+      "repo": "storytold/craft-launcher",
+      "category": "creation",
+      "title": "ArtCraft Launcher",
+      "summary": "Le lanceur officiel de la suite ArtCraft : il installe, met à jour et ouvre toutes les applis Craft depuis une seule fenêtre.",
+      "tags": ["Suite ArtCraft", "Lanceur", "Rust"],
+      "build": ["cargo", "build", "--release", "-p", "artcraft-launcher"],
+      "run": ["target/release/artcraft-launcher"]
+    },
+    {
+      "repo": "storytold/filmcraft",
+      "category": "creation",
+      "title": "FilmCraft — montage vidéo",
+      "summary": "Logiciel de montage non linéaire façon Premiere Pro : timeline multipiste, multicam, étalonnage, images clés, effets, titres et sous-titres (SRT, WebVTT…), mixage audio avec mesure de loudness, et export.",
+      "tags": ["≈ Premiere Pro", "Montage", "Étalonnage", "Sous-titres", "Rust"],
+      "build": ["cargo", "build", "--release", "-p", "filmcraft"],
+      "run": ["target/release/filmcraft"]
+    },
+    {
+      "repo": "storytold/effectcraft",
+      "category": "creation",
+      "title": "EffectCraft — motion design",
+      "summary": "Motion design et compositing façon After Effects : calques animés, images clés, effets et rendu de vidéos, y compris en ligne de commande.",
+      "tags": ["≈ After Effects", "Motion design", "Compositing", "Rust"],
+      "build": ["cargo", "build", "--release", "-p", "effectcraft"],
+      "run": ["target/release/effectcraft"]
+    },
+    {
+      "repo": "storytold/photocraft",
+      "category": "creation",
+      "title": "PhotoCraft — retouche photo",
+      "summary": "Retouche façon Photoshop : calques, calques de réglage (Courbes, Vibrance…), texte, effets de calque. Ouvre et réenregistre les fichiers .psd avec une très bonne fidélité.",
+      "tags": ["≈ Photoshop", "Calques", "Fichiers PSD", "Rust"],
+      "build": ["cargo", "build", "--release", "-p", "photocraft"],
+      "run": ["target/release/photocraft"]
+    },
+    {
+      "repo": "storytold/lightcraft",
+      "category": "creation",
+      "title": "LightCraft — développement photo",
+      "summary": "Développement non destructif de photos RAW façon Lightroom : réglages d'exposition, de couleur et de détails sans jamais toucher au fichier d'origine.",
+      "tags": ["≈ Lightroom", "Photos RAW", "Non destructif", "Rust"],
+      "build": ["cargo", "build", "--release", "-p", "lightcraft"],
+      "run": ["target/release/lightcraft"]
+    },
+    {
+      "repo": "storytold/vectorcraft",
+      "category": "creation",
+      "title": "VectorCraft — dessin vectoriel",
+      "summary": "Illustration vectorielle façon Illustrator : tracés, formes, plumes et export SVG.",
+      "tags": ["≈ Illustrator", "Vectoriel", "SVG", "Rust"],
+      "build": ["cargo", "build", "--release", "-p", "vectorcraft"],
+      "run": ["target/release/vectorcraft"]
+    },
+    {
+      "repo": "storytold/designcraft",
+      "category": "creation",
+      "title": "DesignCraft — mise en page",
+      "summary": "Mise en page façon InDesign pour affiches, magazines et documents : blocs de texte chaînés, gabarits, grilles.",
+      "tags": ["≈ InDesign", "Mise en page", "Print", "Rust"],
+      "build": ["cargo", "build", "--release", "-p", "designcraft"],
+      "run": ["target/release/designcraft"]
+    },
+    {
+      "repo": "tangency-labs/solidcraft",
+      "category": "creation",
+      "title": "SolidCraft — CAO 3D facile",
+      "summary": "CAO paramétrique pensée pour être simple, dans l'esprit de Fusion 360 : on dessine une esquisse, on la cote, on extrude, et une frise chronologique garde chaque étape modifiable (change une cote, tout se recalcule). Congés, coques, filetages, assemblages, tôlerie, et export STL / 3MF / STEP prêt pour l'impression 3D.",
+      "tags": ["≈ Fusion 360", "CAO paramétrique", "Impression 3D", "STL / 3MF / STEP", "Rust"],
+      "launch_hint": "Encore jeune mais déjà utilisable pour des pièces simples. Une version web existe aussi (bouton « Site web »).",
+      "build": ["cargo", "build", "--release", "-p", "solidcraft"],
+      "run": ["target/release/solidcraft"],
+      "web": "https://solidcraft.io/app"
+    },
+    {
+      "repo": "storytold/pdfcraft",
+      "category": "outils",
+      "title": "PdfCraft — lecteur et éditeur PDF",
+      "summary": "Lire, annoter et modifier des PDF façon Acrobat, sans abonnement ni compte.",
+      "tags": ["≈ Acrobat", "PDF", "Annotations", "Rust"],
+      "build": ["cargo", "build", "--release", "-p", "pdfcraft"],
+      "run": ["target/release/pdfcraft"]
+    },
+    {
+      "repo": "storytold/soundcraft",
+      "category": "creation",
+      "title": "SoundCraft — studio audio",
+      "summary": "Station audio façon Pro Tools / Audition : enregistrement multipiste, édition et mixage.",
+      "tags": ["≈ Pro Tools", "Audio", "Mixage", "Rust"],
+      "build": ["cargo", "build", "--release", "-p", "soundcraft"],
+      "run": ["target/release/soundcraft"]
+    }
+  ]
+}

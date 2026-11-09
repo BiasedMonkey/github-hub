@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+
+# Éditeurs et outils
+.claude/
+.idea
+.vscode
+.mcp.json
+
+# Fichiers vides créés par le bac à sable de l'éditeur, sans rapport avec le projet
+.bash_profile
+.bashrc
+.gitconfig
+.gitmodules
+.profile
+.ripgreprc
+.zprofile
+.zshrc
