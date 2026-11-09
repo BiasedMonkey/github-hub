@@ -796,8 +796,9 @@ def run_job(job_id, repo, action):
                              env=child_env())
         if stoppable:
             running[repo] = p  # le bouton « Arrêter » peut l'interrompre
-        for line in p.stdout:
-            log(line.rstrip())
+        with p.stdout:
+            for line in p.stdout:
+                log(line.rstrip())
         return p.wait()
 
     def build():
