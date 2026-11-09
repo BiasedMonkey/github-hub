@@ -26,6 +26,7 @@
 - **Mettre à jour** un projet ou **tout mettre à jour**. Tes modifications locales sont mises de côté et réappliquées, et le projet n'est recompilé que si son code a changé.
 - **Panneau Activité** : la progression et le journal de chaque téléchargement ou compilation.
 - **❤ Favoris**, gardés même quand un projet n'est plus en tendance.
+- **👥 Abonnements** : suis des personnes ou des organisations GitHub. Leurs derniers dépôts arrivent dans un fil, et ceux sortis depuis ta dernière visite sont marqués ✨ Nouveau.
 - **👤 Mes dépôts** : tes propres projets GitHub, privés compris, lus avec l'outil `gh` déjà connecté (filtres publics, privés et forks).
 - Fiche de détails pour chaque projet : README complet, licence, forks, activité.
 

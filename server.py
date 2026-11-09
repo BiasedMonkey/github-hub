@@ -33,6 +33,8 @@ HUB_DIR = Path(os.environ.get("HUB_DIR", Path.home() / "GitHubHub")).expanduser(
 REPOS_DIR = HUB_DIR / "repos"
 CACHE_FILE = HUB_DIR / "cache.json"
 FAVORITES_FILE = HUB_DIR / "favorites.json"
+FOLLOWS_FILE = HUB_DIR / "follows.json"
+LOGIN_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 PORT = int(os.environ.get("HUB_PORT", "8765"))
 REPO_RE = re.compile(r"^[A-Za-z0-9-]+/(?!\.\.?$)[A-Za-z0-9_.-]+$")
 PAGE_TTL = 30 * 60        # pages tendances / README en mémoire
@@ -130,6 +132,22 @@ def save_favorites():
 # repo -> {"added": timestamp, "category": id} ; gardés sur disque, même pour un
 # projet qui n'est plus en tendance
 favorites = load_favorites()
+
+
+def load_follows():
+    try:
+        return json.loads(FOLLOWS_FILE.read_text())
+    except Exception:
+        return {}
+
+
+def save_follows():
+    FOLLOWS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    FOLLOWS_FILE.write_text(json.dumps(follows, indent=1))
+
+
+# login -> {"added": timestamp, "seen": date ISO de la dernière visite du fil}
+follows = load_follows()
 
 
 def meta_from_api(i):
@@ -265,6 +283,61 @@ def category_trending(cat_id, source, language):
             general.append({"repo": i["full_name"], "gained": None, "category": cat_id,
                             **meta_cache[i["full_name"]]})
     return general
+
+
+def gh_json(path):
+    """API REST GitHub : via `gh` s'il est connecté (5 000 req/h), sinon sans compte (60 req/h).
+    Gardé 20 min en mémoire comme les autres pages."""
+    key = "gh:" + path
+    hit = page_cache.get(key)
+    if hit and time.time() - hit[0] < 20 * 60:
+        return hit[1]
+    data = None
+    if shutil.which("gh"):
+        p = subprocess.run(["gh", "api", path], capture_output=True, text=True, timeout=30)
+        if p.returncode == 0:
+            data = json.loads(p.stdout)
+        elif "Not Found" in p.stderr:
+            raise LookupError("introuvable")
+    if data is None:
+        data = http_get("https://api.github.com/" + path)
+    page_cache[key] = (time.time(), data)
+    return data
+
+
+def profile_feed(login):
+    """Un profil suivi (personne ou organisation) et ses derniers dépôts créés."""
+    u = gh_json(f"users/{login}")
+    repos = gh_json(f"users/{login}/repos?sort=created&direction=desc&per_page=15")
+    items = []
+    for i in repos:
+        meta_cache[i["full_name"]] = meta_from_api(i)
+        items.append(with_category({
+            "repo": i["full_name"], **meta_cache[i["full_name"]], "gained": None,
+            "fork": i.get("fork", False), "archived": i.get("archived", False),
+            "category": catalog_entry(i["full_name"]).get("category")}))
+    return {"login": u["login"], "name": u.get("name") or "", "bio": u.get("bio") or "",
+            "type": u.get("type"), "followers": u.get("followers"), "public_repos": u.get("public_repos"),
+            "blog": u.get("blog") or "", "items": items}
+
+
+def follows_feed():
+    """Tous les profils suivis, en parallèle ; un profil en erreur n'empêche pas les autres."""
+    def one(login):
+        try:
+            return profile_feed(login)
+        except Exception as e:
+            return {"login": login, "error": "profil introuvable" if isinstance(e, LookupError) else str(e),
+                    "items": []}
+    with ThreadPoolExecutor(6) as pool:
+        profiles = list(pool.map(one, list(follows)))
+    for p in profiles:
+        seen = follows.get(p["login"], {}).get("seen") or ""
+        for i in p["items"]:
+            # « nouveau » = créé depuis la dernière visite du fil (jamais au premier suivi)
+            i["new"] = bool(seen) and (i.get("created_at") or "") > seen
+            i["local"] = local_status(i["repo"])
+    return profiles
 
 
 _mine_cache = {}
@@ -1028,7 +1101,7 @@ class Handler(BaseHTTPRequestHandler):
                     e["category"] = fav.get("category")  # celle vue au moment de l'ajout
                 with_category(e)
             self.send_json({"categories": public_categories(), "repos": entries,
-                            "favorites": list(favorites)})
+                            "favorites": list(favorites), "follows": list(follows)})
         elif url.path == "/api/trending":
             try:
                 source, language = qs.get("source", ["daily"])[0], qs.get("language", [""])[0]
@@ -1043,6 +1116,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "GitHub limite les recherches sans compte (10 par minute) : "
                                          "nouvel essai automatique dans une minute." if limited else str(e),
                                 "retry": limited}, 502)
+        elif url.path == "/api/follows":
+            self.send_json({"categories": public_categories(), "profiles": follows_feed()})
         elif url.path == "/api/mine":
             if qs.get("refresh"):
                 _mine_cache.clear()
@@ -1110,6 +1185,32 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/update-all":
             ids = [start_job(r, "update") for r in installed_repos()]
             return self.send_json({"jobs": [i for i in ids if i]})
+        if self.path == "/api/follow":
+            # accepte « storytold », « @storytold » ou un lien https://github.com/storytold
+            login = re.sub(r"^(https?://)?(www\.)?github\.com/", "", str(data.get("login", "")).strip())
+            login = login.strip("@/ ").split("/")[0]
+            if not LOGIN_RE.match(login):
+                return self.send_json({"error": "Pseudo GitHub invalide."}, 400)
+            if data.get("on", True):
+                try:
+                    login = gh_json(f"users/{login}")["login"]  # vérifie qu'il existe, bonne casse
+                except LookupError:
+                    return self.send_json({"error": f"Le profil « {login} » n'existe pas sur GitHub."}, 404)
+                except Exception as e:
+                    return self.send_json({"error": str(e)}, 502)
+                follows.setdefault(login, {"added": time.time(),
+                                           "seen": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})
+            else:
+                follows.pop(login, None)
+            save_follows()
+            return self.send_json({"follows": list(follows), "login": login})
+        if self.path == "/api/follows/seen":
+            # le fil a été vu : ce qui est « nouveau » ne le sera plus à la prochaine visite
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            for f in follows.values():
+                f["seen"] = now
+            save_follows()
+            return self.send_json({"ok": True})
         if self.path == "/api/favorite":
             repo = data.get("repo", "")
             if not REPO_RE.match(repo):
