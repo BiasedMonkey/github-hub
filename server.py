@@ -962,7 +962,22 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def from_hub(self):
+        """Refuse toute requête adressée à un autre nom que 127.0.0.1 / localhost.
+
+        Sinon une page web piégée peut faire pointer son propre nom de domaine vers
+        127.0.0.1 (« DNS rebinding ») : le navigateur la croit chez elle, la laisse
+        envoyer X-Hub et lire les réponses, donc installer et lancer n'importe quoi.
+        """
+        port = self.server.server_address[1]
+        if self.headers.get("Host") in (f"127.0.0.1:{port}", f"localhost:{port}"):
+            return True
+        self.send_json({"error": "interdit"}, 403)
+        return False
+
     def do_GET(self):
+        if not self.from_hub():
+            return
         url = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(url.query)
         if url.path == "/":
@@ -1058,6 +1073,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"error": "introuvable"}, 404)
 
     def do_POST(self):
+        if not self.from_hub():
+            return
         # un site web tiers ne peut pas ajouter cet en-tête sans pré-vol CORS,
         # qu'on ne valide jamais : protège contre les requêtes forgées
         if self.headers.get("X-Hub") != "1":
