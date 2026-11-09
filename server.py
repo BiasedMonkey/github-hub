@@ -1138,7 +1138,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": str(e)}, 400)
         if self.path == "/api/terminal":
             subprocess.Popen(terminal_cmd([os.environ.get("SHELL", "sh")], repo_path(repo)),
-                             start_new_session=True)
+                             start_new_session=True, env=child_env())
             return self.send_json({"ok": True})
         if self.path == "/api/stop":
             stop_program(repo)

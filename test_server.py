@@ -14,6 +14,7 @@ import tempfile
 import threading
 import time
 import unittest
+import warnings
 from pathlib import Path
 
 os.environ["HUB_DIR"] = tempfile.mkdtemp(prefix="github-hub-test-")
@@ -123,7 +124,7 @@ class OrigineDesRequetes(unittest.TestCase):
 
 class JetonsGitHub(unittest.TestCase):
     def setUp(self):
-        self.avant = {k: os.environ.get(k) for k in ("GITHUB_TOKEN", "GH_TOKEN")}
+        self.avant = {k: os.environ.get(k) for k in ("GITHUB_TOKEN", "GH_TOKEN", "PATH")}
         os.environ["GITHUB_TOKEN"] = "jeton-secret-github"
         os.environ["GH_TOKEN"] = "jeton-secret-gh"
 
@@ -134,15 +135,44 @@ class JetonsGitHub(unittest.TestCase):
             else:
                 os.environ[k] = v
 
+    def jetons_visibles(self, fichier_env):
+        """Noms des variables qui contiennent un jeton (un échec n'affiche pas tout l'environnement)."""
+        variables = dict(l.split("=", 1) for l in fichier_env.read_text().splitlines() if "=" in l)
+        self.assertIn("PATH", variables)
+        return [k for k, v in variables.items() if "jeton-secret" in v]
+
     def test_la_compilation_ne_voit_pas_les_jetons(self):
         path = faux_depot("test/jeton", {"Makefile": "all:\n\tenv > env.txt\n"})
         job = attendre(server.start_job("test/jeton", "build"))
         self.assertEqual(job["state"], "ok", "\n".join(job["log"]))
-        variables = dict(l.split("=", 1) for l in (path / "env.txt").read_text().splitlines() if "=" in l)
-        self.assertIn("PATH", variables)
-        # on ne compare que les noms : un échec n'affiche pas tout l'environnement
-        visibles = [k for k, v in variables.items() if "jeton-secret" in v]
-        self.assertEqual(visibles, [], "jetons visibles par la compilation")
+        self.assertEqual(self.jetons_visibles(path / "env.txt"), [], "jetons visibles par la compilation")
+
+    def test_le_terminal_du_dossier_ne_voit_pas_les_jetons(self):
+        faux_depot("test/terminal", {"LISEZMOI": "rien\n"})
+        # un faux konsole, trouvé en premier dans le PATH, note l'environnement reçu
+        faux = Path(tempfile.mkdtemp(dir=server.HUB_DIR))
+        sortie = faux / "env.txt"
+        (faux / "konsole").write_text(f"#!/bin/sh\nenv > '{sortie}.tmp' && mv '{sortie}.tmp' '{sortie}'\n")
+        (faux / "konsole").chmod(0o755)
+        os.environ["PATH"] = f"{faux}:{os.environ['PATH']}"
+        httpd = server.make_server(0)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        self.addCleanup(httpd.server_close)
+        self.addCleanup(httpd.shutdown)
+        port = httpd.server_address[1]
+        # /api/terminal lance konsole sans l'attendre (voulu) : Python émet un ResourceWarning
+        # quand l'objet Popen disparaît alors que le faux konsole tourne encore
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ResourceWarning)
+            c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+            c.request("POST", "/api/terminal", json.dumps({"repo": "test/terminal"}),
+                      {"Host": f"127.0.0.1:{port}", "X-Hub": "1", "Content-Type": "application/json"})
+            self.assertEqual(c.getresponse().status, 200)
+            c.close()
+            fin = time.time() + 10
+            while not sortie.exists() and time.time() < fin:
+                time.sleep(0.05)
+        self.assertEqual(self.jetons_visibles(sortie), [], "jetons visibles dans le terminal")
 
 
 class RepereDeCompilation(unittest.TestCase):
