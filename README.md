@@ -45,13 +45,19 @@ Sur Arch / CachyOS :
 sudo pacman -S pyside6 qt6-webengine git
 ```
 
+Ailleurs (Fedora, Ubuntu, Bazzite et autres systèmes immuables…), PySide6 s'installe sans sudo dans le dossier du hub : voir ci-dessous.
+
 ## Lancer
 
 ```bash
 git clone https://github.com/BiasedMonkey/github-hub
 cd github-hub
+# sauf sur Arch / CachyOS : PySide6 dans un environnement Python du dossier, sans sudo
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ./lancer.sh
 ```
+
+`lancer.sh` (et donc le raccourci du menu) utilise `.venv` dès qu'il existe.
 
 Pour l'ajouter au menu des applications (KDE, GNOME…) :
 
@@ -75,11 +81,13 @@ Sans compte, l'API de recherche de GitHub accepte 10 recherches par minute. Le h
 GITHUB_TOKEN=ton_jeton ./lancer.sh
 ```
 
+Le jeton reste dans le hub : les projets qu'il compile ou lance ne le voient pas.
+
 ## Sécurité
 
 - **« Ma sélection »** (`catalog.json`) ne contient que des dépôts officiels vérifiés, avec leur recette de compilation.
 - Installer un projet **hors de cette sélection** demande une confirmation : le hub compile et exécute du code téléchargé. Méfie-toi des « cheats », « boosters FPS » et « cracks ».
-- Le serveur interne n'écoute que sur `127.0.0.1`, et refuse les requêtes venant d'autres sites.
+- Le serveur interne n'écoute que sur `127.0.0.1`, refuse les requêtes venant d'autres sites et celles adressées à un autre nom que `127.0.0.1` ou `localhost` (protection contre le « DNS rebinding »).
 
 ## Structure
 
@@ -91,5 +99,7 @@ GITHUB_TOKEN=ton_jeton ./lancer.sh
 | `catalog.json` | La sélection de projets et leurs recettes |
 | `logo.svg` | Le logo |
 | `lancer.sh`, `installer-raccourci.sh` | Le lancement et le raccourci du menu |
+| `requirements.txt` | Les dépendances Python (PySide6), pour `pip` |
+| `test_server.py` | Les tests du serveur : `python3 -m unittest -v` |
 
 On peut aussi lancer `python3 server.py` seul, pour déboguer dans un navigateur sur http://127.0.0.1:8765.

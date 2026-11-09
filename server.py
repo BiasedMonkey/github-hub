@@ -279,7 +279,7 @@ def my_repos():
     if _mine_cache and time.time() - _mine_cache["t"] < 10 * 60:
         return _mine_cache["data"]
     if not shutil.which("gh"):
-        raise RuntimeError("L'outil « gh » n'est pas installé (sudo pacman -S github-cli).")
+        raise RuntimeError("L'outil « gh » n'est pas installé (paquet github-cli ou gh).")
     fields = ("nameWithOwner,description,stargazerCount,forkCount,primaryLanguage,isPrivate,"
               "isFork,pushedAt,createdAt,homepageUrl,licenseInfo,repositoryTopics")
     p = subprocess.run(["gh", "repo", "list", "--limit", "200", "--json", fields],
@@ -820,7 +820,7 @@ def run_job(job_id, repo, action):
             return 0
         if missing_tools(r):
             raise RuntimeError("outil(s) manquant(s) : " + ", ".join(missing_tools(r))
-                               + " (à installer avec pacman)")
+                               + " (à installer avec le gestionnaire de paquets du système)")
         log("── Compilation (ça peut prendre plusieurs minutes la première fois) ──")
         code = stream(r["build"], cwd=path)
         if code == 0:
