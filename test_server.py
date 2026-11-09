@@ -120,6 +120,24 @@ class SansTerminal(unittest.TestCase):
         self.assertTrue(statut["built"])
         self.assertFalse(statut["launchable"])  # pas de raccourci possible sans terminal
 
+    def test_terminal_du_dossier_repond_une_erreur(self):
+        # avant : le serveur coupait la connexion sans répondre, et le bouton ne faisait rien
+        faux_depot("test/sans-terminal-api", {"LISEZMOI": "rien\n"})
+        statut, reponse = requete(serveur(self), "/api/terminal", {"repo": "test/sans-terminal-api"})
+        self.assertEqual(statut, 400)
+        self.assertIn("Aucun terminal", reponse["error"])
+
+    def test_ouvrir_le_dossier_sans_xdg_open_repond_une_erreur(self):
+        faux_depot("test/sans-xdg-open", {"LISEZMOI": "rien\n"})
+        statut, reponse = requete(serveur(self), "/api/open", {"repo": "test/sans-xdg-open"})
+        self.assertEqual(statut, 400)
+        self.assertIn("xdg-open", reponse["error"])
+
+    def test_dossier_d_un_projet_non_installe(self):
+        statut, reponse = requete(serveur(self), "/api/open", {"repo": "test/jamais-installe"})
+        self.assertEqual(statut, 400)
+        self.assertIn("pas installé", reponse["error"])
+
 
 class OrigineDesRequetes(unittest.TestCase):
     """Le serveur n'obéit qu'à sa propre fenêtre, même via DNS rebinding."""

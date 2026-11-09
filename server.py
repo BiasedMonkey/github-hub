@@ -1233,8 +1233,20 @@ class Handler(BaseHTTPRequestHandler):
         repo = data.get("repo", "")
         if not REPO_RE.match(repo):
             return self.send_json({"error": "nom de dépôt invalide"}, 400)
-        if self.path == "/api/open":
-            subprocess.Popen(["xdg-open", str(repo_path(repo))], env=child_env())
+        if self.path in ("/api/open", "/api/terminal"):
+            # « Ouvrir le dossier » et « Terminal ici » : une erreur claire plutôt qu'une
+            # connexion coupée sans réponse (le bouton ne faisait alors rien)
+            path = repo_path(repo)
+            if not path.is_dir():
+                return self.send_json({"error": "Ce projet n'est pas installé."}, 400)
+            try:
+                cmd = (["xdg-open", str(path)] if self.path == "/api/open"
+                       else terminal_cmd([os.environ.get("SHELL", "sh")], path))
+                subprocess.Popen(cmd, cwd=path, start_new_session=True, env=child_env())
+            except RuntimeError as e:  # aucun terminal
+                return self.send_json({"error": str(e)}, 400)
+            except FileNotFoundError:
+                return self.send_json({"error": f"« {cmd[0]} » est introuvable sur ce PC."}, 400)
             return self.send_json({"ok": True})
         if self.path == "/api/shortcut":
             if data.get("kind") not in ("desktop", "menu"):
@@ -1244,10 +1256,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True, "shortcuts": shortcut_state(repo)})
             except Exception as e:
                 return self.send_json({"error": str(e)}, 400)
-        if self.path == "/api/terminal":
-            subprocess.Popen(terminal_cmd([os.environ.get("SHELL", "sh")], repo_path(repo)),
-                             start_new_session=True, env=child_env())
-            return self.send_json({"ok": True})
         if self.path == "/api/stop":
             stop_program(repo)
             return self.send_json({"ok": True})
