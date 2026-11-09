@@ -56,6 +56,33 @@ def attendre(job_id, delai=30):
     return server.jobs[job_id]
 
 
+def outils_seulement(*noms):
+    """Un PATH qui ne contient que ces outils (liens vers les vrais), ni konsole ni xterm."""
+    dossier = Path(tempfile.mkdtemp(dir=server.HUB_DIR))
+    for nom in noms:
+        (dossier / nom).symlink_to(shutil.which(nom))
+    return str(dossier)
+
+
+class SansTerminal(unittest.TestCase):
+    """Sans konsole ni xterm (bureau GNOME…), le statut d'un projet s'affiche quand même."""
+
+    def setUp(self):
+        self.path_avant = os.environ["PATH"]
+        os.environ["PATH"] = outils_seulement("git", "make", "env", "du", "true")
+
+    def tearDown(self):
+        os.environ["PATH"] = self.path_avant
+
+    def test_statut_d_un_projet_compile_sans_terminal(self):
+        faux_depot("test/sans-terminal", {"Makefile": "all:\n\ttrue\n"})
+        job = attendre(server.start_job("test/sans-terminal", "build"))
+        self.assertEqual(job["state"], "ok", "\n".join(job["log"]))
+        statut = server.local_status("test/sans-terminal")
+        self.assertTrue(statut["built"])
+        self.assertFalse(statut["launchable"])  # pas de raccourci possible sans terminal
+
+
 class OrigineDesRequetes(unittest.TestCase):
     """Le serveur n'obéit qu'à sa propre fenêtre, même via DNS rebinding."""
 

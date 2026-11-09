@@ -677,7 +677,12 @@ def shortcut_command(repo, path, r=None):
         cmd[0] = str(path / cmd[0])
     if "window" in r["modes"]:
         return cmd
-    return terminal_cmd(cmd, path) if "terminal" in r["modes"] else None
+    if "terminal" in r["modes"]:
+        try:
+            return terminal_cmd(cmd, path)
+        except RuntimeError:  # ni konsole ni xterm (bureau GNOME…) : pas de raccourci possible
+            return None
+    return None
 
 
 def find_icon(repo, path):
