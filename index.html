@@ -1177,7 +1177,11 @@ async function act(action, repo, mode, data = {}) {
 
 async function pollJobs() {
   const before = new Map(S.jobs.map(j => [j.id, j.state]));
-  S.jobs = await api("/api/jobs");
+  // on dit au serveur combien de lignes de chaque journal on a déjà : il n'envoie que la suite
+  const known = new Map(S.jobs.map(j => [j.id, j.log]));
+  const have = S.jobs.map(j => `${j.id}:${j.log.length}`).join(",");
+  const fresh = await api("/api/jobs" + (have ? "?have=" + have : ""));
+  S.jobs = fresh.map(j => ({...j, log: (known.get(j.id) || []).slice(0, j.log_from).concat(j.log)}));
   let finished = false;
   for (const j of S.jobs) {
     if (before.get(j.id) === "running" && j.state !== "running") {

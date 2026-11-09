@@ -1175,8 +1175,21 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self.send_json({"error": str(e)}, 502)
         elif url.path == "/api/jobs":
+            # le panneau Activité redemande la liste toutes les 0,8 s pendant une tâche : il
+            # dit combien de lignes de chaque journal il a déjà (have=id:n,…), et ne reçoit
+            # que la suite, à partir de la ligne log_from (un journal ne fait que s'allonger)
+            have = {}
+            for part in qs.get("have", [""])[0].split(","):
+                job_id, _, n = part.partition(":")
+                if n.isdigit():
+                    have[job_id] = int(n)
             with jobs_lock:
-                self.send_json(sorted(jobs.values(), key=lambda j: -j["started"])[:30])
+                recent = sorted(jobs.values(), key=lambda j: -j["started"])[:30]
+                out = []
+                for j in recent:
+                    start = min(have.get(j["id"], 0), len(j["log"]))
+                    out.append(dict(j, log=j["log"][start:], log_from=start))
+            self.send_json(out)
         else:
             self.send_json({"error": "introuvable"}, 404)
 

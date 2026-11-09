@@ -195,6 +195,28 @@ exec '{vrai_git}' "$@"
         self.assertTrue(reponse["test/bloque"]["installed"])
 
 
+class JournauxDesTaches(unittest.TestCase):
+    def test_seules_les_nouvelles_lignes_sont_envoyees(self):
+        # le panneau Activité redemande /api/jobs toutes les 0,8 s : avant, chaque appel
+        # renvoyait les journaux complets (227 Ko pour une compilation de 3 000 lignes)
+        faux_depot("test/bavard", {"Makefile": "all:\n\t@seq 1 3000\n"})
+        job_id = server.start_job("test/bavard", "build")
+        nb = len(attendre(job_id)["log"])
+        port = serveur(self)
+
+        def journal(have=""):
+            statut, taches = requete(port, "/api/jobs" + have)
+            self.assertEqual(statut, 200)
+            return next(j for j in taches if j["id"] == job_id)
+
+        tout = journal()  # première fois : tout le journal
+        self.assertEqual((tout["log_from"], len(tout["log"])), (0, nb))
+        suite = journal(f"?have={job_id}:{nb - 10}")
+        self.assertEqual((suite["log_from"], suite["log"]), (nb - 10, tout["log"][-10:]))
+        rien = journal(f"?have={job_id}:{nb}")
+        self.assertEqual((rien["log_from"], rien["log"]), (nb, []))
+
+
 class OrigineDesRequetes(unittest.TestCase):
     """Le serveur n'obéit qu'à sa propre fenêtre, même via DNS rebinding."""
 
