@@ -173,6 +173,28 @@ mv '{self.sortie}.tmp' '{self.sortie}'
         self.assertTrue(server.local_status("test/xdg-raccourci")["launchable"])
 
 
+class VerificationDesMisesAJour(unittest.TestCase):
+    def setUp(self):
+        self.path_avant, self.delai_avant = os.environ["PATH"], server.FETCH_TIMEOUT
+
+    def tearDown(self):
+        os.environ["PATH"], server.FETCH_TIMEOUT = self.path_avant, self.delai_avant
+
+    def test_un_depot_injoignable_ne_bloque_pas_la_verification(self):
+        # avant : un seul git fetch trop long faisait échouer toute la requête, sans réponse,
+        # et le bouton « Vérifier les mises à jour » restait grisé
+        faux_depot("test/bloque", {"LISEZMOI": "rien\n"})
+        vrai_git = shutil.which("git")
+        faux = faux_programme("git", f"""case "$*" in *bloque*fetch*) exec sleep 600 ;; esac
+exec '{vrai_git}' "$@"
+""")
+        os.environ["PATH"] = f"{faux}:{os.environ['PATH']}"
+        server.FETCH_TIMEOUT = 1
+        statut, reponse = requete(serveur(self), "/api/check", {})
+        self.assertEqual(statut, 200)
+        self.assertTrue(reponse["test/bloque"]["installed"])
+
+
 class OrigineDesRequetes(unittest.TestCase):
     """Le serveur n'obéit qu'à sa propre fenêtre, même via DNS rebinding."""
 

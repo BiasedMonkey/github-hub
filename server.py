@@ -39,6 +39,7 @@ PORT = int(os.environ.get("HUB_PORT", "8765"))
 REPO_RE = re.compile(r"^[A-Za-z0-9-]+/(?!\.\.?$)[A-Za-z0-9_.-]+$")
 PAGE_TTL = 30 * 60        # pages tendances / README en mémoire
 META_TTL = 6 * 3600       # infos des dépôts, gardées sur disque
+FETCH_TIMEOUT = 120       # secondes accordées à chaque git fetch de « Vérifier les mises à jour »
 
 jobs = {}            # id -> {repo, action, state, log, started}
 jobs_lock = threading.Lock()
@@ -1189,9 +1190,13 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         data = json.loads(self.rfile.read(length) or b"{}")
         if self.path == "/api/check":
+            def fetch(repo):
+                try:
+                    git(repo_path(repo), "fetch", "--prune", timeout=FETCH_TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    pass  # dépôt injoignable : on garde son dernier état connu, sans bloquer les autres
             with ThreadPoolExecutor(6) as pool:
-                list(pool.map(lambda r: git(repo_path(r), "fetch", "--prune", timeout=120),
-                              installed_repos()))
+                list(pool.map(fetch, installed_repos()))
             return self.send_json({r: local_status(r) for r in installed_repos()})
         if self.path == "/api/update-all":
             ids = [start_job(r, "update") for r in installed_repos()]

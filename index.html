@@ -1359,11 +1359,16 @@ async function loadBuzz() {
 async function checkUpdates() {
   const b = $("#check");
   b.disabled = true; b.innerHTML = `<span class="spin"></span>`;
-  const res = await api("/api/check", {});
-  const n = Object.values(res).filter(s => s.behind > 0).length;
-  S.checkInfo = Object.keys(res).length ? (n ? null : "Tout est à jour") : "Prêt";
-  if (n) toast(`${n} mise(s) à jour disponible(s)`, "ok");
-  b.disabled = false; b.innerHTML = icon("refresh");
+  try {
+    const res = await api("/api/check", {});
+    const n = Object.values(res).filter(s => s.behind > 0).length;
+    S.checkInfo = Object.keys(res).length ? (n ? null : "Tout est à jour") : "Prêt";
+    if (n) toast(`${n} mise(s) à jour disponible(s)`, "ok");
+  } catch (e) {
+    toast("La vérification des mises à jour a échoué.", "err");
+  } finally {
+    b.disabled = false; b.innerHTML = icon("refresh");  // jamais de bouton grisé pour de bon
+  }
   loadCatalog();
 }
 
