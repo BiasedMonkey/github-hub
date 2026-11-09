@@ -856,9 +856,13 @@ def pull_plan(dirty, ahead, behind):
 def terminal_cmd(cmd, cwd):
     if shutil.which("konsole"):
         return ["konsole", "--workdir", str(cwd), "-e", *cmd]
+    if shutil.which("xdg-terminal-exec"):
+        # le terminal par défaut du bureau (proposition de norme freedesktop), ex. Ptyxis
+        # ou GNOME Terminal sous GNOME ; livré avec Bazzite, paquet xdg-terminal-exec ailleurs
+        return ["xdg-terminal-exec", f"--dir={cwd}", "--", *cmd]
     if shutil.which("xterm"):
         return ["xterm", "-e", *cmd]
-    raise RuntimeError("Aucun terminal trouvé (konsole ou xterm).")
+    raise RuntimeError("Aucun terminal trouvé (konsole, xdg-terminal-exec ou xterm).")
 
 
 # ---------------------------------------------------------------- jobs

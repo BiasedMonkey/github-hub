@@ -139,6 +139,40 @@ class SansTerminal(unittest.TestCase):
         self.assertIn("pas installé", reponse["error"])
 
 
+class TerminalParDefaut(unittest.TestCase):
+    """Sans konsole ni xterm mais avec xdg-terminal-exec (Bazzite, Fedora, Ubuntu récents…),
+    le terminal par défaut du bureau sert au mode Terminal et aux raccourcis."""
+
+    def setUp(self):
+        self.path_avant = os.environ["PATH"]
+        self.sortie = Path(tempfile.mkdtemp(dir=server.HUB_DIR)) / "terminal.txt"
+        faux = faux_programme("xdg-terminal-exec", f"""printf '%s\\n' "$PWD" "$*" > '{self.sortie}.tmp'
+mv '{self.sortie}.tmp' '{self.sortie}'
+""")
+        os.environ["PATH"] = f"{faux}:" + outils_seulement("git", "make", "env", "du", "true",
+                                                            "printf", "mv")
+
+    def tearDown(self):
+        os.environ["PATH"] = self.path_avant
+
+    def test_terminal_du_dossier(self):
+        path = faux_depot("test/xdg-terminal", {"LISEZMOI": "rien\n"})
+        with warnings.catch_warnings():  # terminal lancé sans l'attendre (voulu)
+            warnings.simplefilter("ignore", ResourceWarning)
+            statut, reponse = requete(serveur(self), "/api/terminal", {"repo": "test/xdg-terminal"})
+            self.assertEqual(statut, 200, reponse)
+            attendre_fichier(self.sortie)
+        dossier, arguments = self.sortie.read_text().splitlines()
+        self.assertEqual(Path(dossier).resolve(), path.resolve())
+        self.assertIn(f"--dir={path}", arguments)
+
+    def test_raccourci_possible(self):
+        faux_depot("test/xdg-raccourci", {"Makefile": "all:\n\ttrue\n"})
+        job = attendre(server.start_job("test/xdg-raccourci", "build"))
+        self.assertEqual(job["state"], "ok", "\n".join(job["log"]))
+        self.assertTrue(server.local_status("test/xdg-raccourci")["launchable"])
+
+
 class OrigineDesRequetes(unittest.TestCase):
     """Le serveur n'obéit qu'à sa propre fenêtre, même via DNS rebinding."""
 
