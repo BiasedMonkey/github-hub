@@ -20,7 +20,7 @@
 - **Installer en un clic** : le hub télécharge le dépôt (clone partiel) puis le compile avec la bonne recette (Cargo, npm, CMake, Make…).
 - **Lancer**, avec le mode de ton choix :
   - 🖥️ **Fenêtre** : l'interface graphique de l'appli ;
-  - ⌨️ **Terminal** : dans Konsole ;
+  - ⌨️ **Terminal** : dans Konsole, ou le terminal par défaut du bureau ;
   - 🧩 **Dans le hub** : un formulaire pour les outils en ligne de commande, avec sélecteur de fichiers ;
   - 🌐 **Version web**, quand le projet en propose une.
 - **Mettre à jour** un projet ou **tout mettre à jour**. Tes modifications locales sont mises de côté et réappliquées, et le projet n'est recompilé que si son code a changé.
@@ -37,7 +37,7 @@
 | Python 3.11+ et **PySide6** (avec QtWebEngine) | La fenêtre de l'appli |
 | `git` | Télécharger et mettre à jour les dépôts |
 | `cargo`, `npm`, `cmake` + `ninja`, `make` | Facultatifs : seulement pour compiler les projets qui en ont besoin |
-| `konsole` ou `xterm`, `kdialog` ou `zenity` | Facultatifs : le mode Terminal et le choix de fichiers |
+| `konsole`, `xdg-terminal-exec` ou `xterm`, `kdialog` ou `zenity` | Facultatifs : le mode Terminal et le choix de fichiers |
 | `gh` (GitHub CLI), connecté avec `gh auth login` | Facultatif : la rubrique « Mes dépôts » |
 
 Sur Arch / CachyOS :

@@ -57,6 +57,43 @@ def attendre(job_id, delai=30):
     return server.jobs[job_id]
 
 
+def faux_programme(nom, script):
+    """Un faux programme `nom` (script sh) dans un dossier à mettre en tête du PATH."""
+    dossier = Path(tempfile.mkdtemp(dir=server.HUB_DIR))
+    (dossier / nom).write_text("#!/bin/sh\n" + script)
+    (dossier / nom).chmod(0o755)
+    return dossier
+
+
+def serveur(test):
+    """Un serveur du hub sur un port libre, arrêté à la fin du test ; renvoie le port."""
+    httpd = server.make_server(0)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    test.addCleanup(httpd.server_close)
+    test.addCleanup(httpd.shutdown)
+    return httpd.server_address[1]
+
+
+def requete(port, chemin, corps=None):
+    """GET (sans corps) ou POST (avec corps) comme la fenêtre du hub ; renvoie (statut, JSON)."""
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    entetes = {"Host": f"127.0.0.1:{port}", "X-Hub": "1", "Content-Type": "application/json"}
+    if corps is None:
+        c.request("GET", chemin, headers=entetes)
+    else:
+        c.request("POST", chemin, json.dumps(corps), entetes)
+    r = c.getresponse()
+    reponse = (r.status, json.loads(r.read() or b"null"))
+    c.close()
+    return reponse
+
+
+def attendre_fichier(fichier, delai=10):
+    fin = time.time() + delai
+    while not fichier.exists() and time.time() < fin:
+        time.sleep(0.05)
+
+
 def outils_seulement(*noms):
     """Un PATH qui ne contient que ces outils (liens vers les vrais), ni konsole ni xterm."""
     dossier = Path(tempfile.mkdtemp(dir=server.HUB_DIR))
@@ -82,6 +119,102 @@ class SansTerminal(unittest.TestCase):
         statut = server.local_status("test/sans-terminal")
         self.assertTrue(statut["built"])
         self.assertFalse(statut["launchable"])  # pas de raccourci possible sans terminal
+
+    def test_terminal_du_dossier_repond_une_erreur(self):
+        # avant : le serveur coupait la connexion sans répondre, et le bouton ne faisait rien
+        faux_depot("test/sans-terminal-api", {"LISEZMOI": "rien\n"})
+        statut, reponse = requete(serveur(self), "/api/terminal", {"repo": "test/sans-terminal-api"})
+        self.assertEqual(statut, 400)
+        self.assertIn("Aucun terminal", reponse["error"])
+
+    def test_ouvrir_le_dossier_sans_xdg_open_repond_une_erreur(self):
+        faux_depot("test/sans-xdg-open", {"LISEZMOI": "rien\n"})
+        statut, reponse = requete(serveur(self), "/api/open", {"repo": "test/sans-xdg-open"})
+        self.assertEqual(statut, 400)
+        self.assertIn("xdg-open", reponse["error"])
+
+    def test_dossier_d_un_projet_non_installe(self):
+        statut, reponse = requete(serveur(self), "/api/open", {"repo": "test/jamais-installe"})
+        self.assertEqual(statut, 400)
+        self.assertIn("pas installé", reponse["error"])
+
+
+class TerminalParDefaut(unittest.TestCase):
+    """Sans konsole ni xterm mais avec xdg-terminal-exec (Bazzite, Fedora, Ubuntu récents…),
+    le terminal par défaut du bureau sert au mode Terminal et aux raccourcis."""
+
+    def setUp(self):
+        self.path_avant = os.environ["PATH"]
+        self.sortie = Path(tempfile.mkdtemp(dir=server.HUB_DIR)) / "terminal.txt"
+        faux = faux_programme("xdg-terminal-exec", f"""printf '%s\\n' "$PWD" "$*" > '{self.sortie}.tmp'
+mv '{self.sortie}.tmp' '{self.sortie}'
+""")
+        os.environ["PATH"] = f"{faux}:" + outils_seulement("git", "make", "env", "du", "true",
+                                                            "printf", "mv")
+
+    def tearDown(self):
+        os.environ["PATH"] = self.path_avant
+
+    def test_terminal_du_dossier(self):
+        path = faux_depot("test/xdg-terminal", {"LISEZMOI": "rien\n"})
+        with warnings.catch_warnings():  # terminal lancé sans l'attendre (voulu)
+            warnings.simplefilter("ignore", ResourceWarning)
+            statut, reponse = requete(serveur(self), "/api/terminal", {"repo": "test/xdg-terminal"})
+            self.assertEqual(statut, 200, reponse)
+            attendre_fichier(self.sortie)
+        dossier, arguments = self.sortie.read_text().splitlines()
+        self.assertEqual(Path(dossier).resolve(), path.resolve())
+        self.assertIn(f"--dir={path}", arguments)
+
+    def test_raccourci_possible(self):
+        faux_depot("test/xdg-raccourci", {"Makefile": "all:\n\ttrue\n"})
+        job = attendre(server.start_job("test/xdg-raccourci", "build"))
+        self.assertEqual(job["state"], "ok", "\n".join(job["log"]))
+        self.assertTrue(server.local_status("test/xdg-raccourci")["launchable"])
+
+
+class VerificationDesMisesAJour(unittest.TestCase):
+    def setUp(self):
+        self.path_avant, self.delai_avant = os.environ["PATH"], server.FETCH_TIMEOUT
+
+    def tearDown(self):
+        os.environ["PATH"], server.FETCH_TIMEOUT = self.path_avant, self.delai_avant
+
+    def test_un_depot_injoignable_ne_bloque_pas_la_verification(self):
+        # avant : un seul git fetch trop long faisait échouer toute la requête, sans réponse,
+        # et le bouton « Vérifier les mises à jour » restait grisé
+        faux_depot("test/bloque", {"LISEZMOI": "rien\n"})
+        vrai_git = shutil.which("git")
+        faux = faux_programme("git", f"""case "$*" in *bloque*fetch*) exec sleep 600 ;; esac
+exec '{vrai_git}' "$@"
+""")
+        os.environ["PATH"] = f"{faux}:{os.environ['PATH']}"
+        server.FETCH_TIMEOUT = 1
+        statut, reponse = requete(serveur(self), "/api/check", {})
+        self.assertEqual(statut, 200)
+        self.assertTrue(reponse["test/bloque"]["installed"])
+
+
+class JournauxDesTaches(unittest.TestCase):
+    def test_seules_les_nouvelles_lignes_sont_envoyees(self):
+        # le panneau Activité redemande /api/jobs toutes les 0,8 s : avant, chaque appel
+        # renvoyait les journaux complets (227 Ko pour une compilation de 3 000 lignes)
+        faux_depot("test/bavard", {"Makefile": "all:\n\t@seq 1 3000\n"})
+        job_id = server.start_job("test/bavard", "build")
+        nb = len(attendre(job_id)["log"])
+        port = serveur(self)
+
+        def journal(have=""):
+            statut, taches = requete(port, "/api/jobs" + have)
+            self.assertEqual(statut, 200)
+            return next(j for j in taches if j["id"] == job_id)
+
+        tout = journal()  # première fois : tout le journal
+        self.assertEqual((tout["log_from"], len(tout["log"])), (0, nb))
+        suite = journal(f"?have={job_id}:{nb - 10}")
+        self.assertEqual((suite["log_from"], suite["log"]), (nb - 10, tout["log"][-10:]))
+        rien = journal(f"?have={job_id}:{nb}")
+        self.assertEqual((rien["log_from"], rien["log"]), (nb, []))
 
 
 class OrigineDesRequetes(unittest.TestCase):
@@ -147,32 +280,60 @@ class JetonsGitHub(unittest.TestCase):
         self.assertEqual(job["state"], "ok", "\n".join(job["log"]))
         self.assertEqual(self.jetons_visibles(path / "env.txt"), [], "jetons visibles par la compilation")
 
-    def test_le_terminal_du_dossier_ne_voit_pas_les_jetons(self):
-        faux_depot("test/terminal", {"LISEZMOI": "rien\n"})
-        # un faux konsole, trouvé en premier dans le PATH, note l'environnement reçu
-        faux = Path(tempfile.mkdtemp(dir=server.HUB_DIR))
-        sortie = faux / "env.txt"
-        (faux / "konsole").write_text(f"#!/bin/sh\nenv > '{sortie}.tmp' && mv '{sortie}.tmp' '{sortie}'\n")
-        (faux / "konsole").chmod(0o755)
+    def env_vu_par(self, programme, route):
+        """Environnement reçu par `programme` (konsole, xdg-open…) que le hub lance via `route`."""
+        faux_depot(f"test/{programme}", {"LISEZMOI": "rien\n"})
+        # un faux programme, trouvé en premier dans le PATH, note l'environnement reçu
+        sortie = Path(tempfile.mkdtemp(dir=server.HUB_DIR)) / "env.txt"
+        faux = faux_programme(programme, f"env > '{sortie}.tmp' && mv '{sortie}.tmp' '{sortie}'\n")
         os.environ["PATH"] = f"{faux}:{os.environ['PATH']}"
-        httpd = server.make_server(0)
-        threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        self.addCleanup(httpd.server_close)
-        self.addCleanup(httpd.shutdown)
-        port = httpd.server_address[1]
-        # /api/terminal lance konsole sans l'attendre (voulu) : Python émet un ResourceWarning
-        # quand l'objet Popen disparaît alors que le faux konsole tourne encore
+        port = serveur(self)
+        # le hub lance ces programmes sans les attendre (voulu) : Python émet un ResourceWarning
+        # quand l'objet Popen disparaît alors que le faux programme tourne encore
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", ResourceWarning)
-            c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-            c.request("POST", "/api/terminal", json.dumps({"repo": "test/terminal"}),
-                      {"Host": f"127.0.0.1:{port}", "X-Hub": "1", "Content-Type": "application/json"})
-            self.assertEqual(c.getresponse().status, 200)
-            c.close()
-            fin = time.time() + 10
-            while not sortie.exists() and time.time() < fin:
-                time.sleep(0.05)
+            self.assertEqual(requete(port, route, {"repo": f"test/{programme}"})[0], 200)
+            attendre_fichier(sortie)
+        return sortie
+
+    def test_le_terminal_du_dossier_ne_voit_pas_les_jetons(self):
+        sortie = self.env_vu_par("konsole", "/api/terminal")
         self.assertEqual(self.jetons_visibles(sortie), [], "jetons visibles dans le terminal")
+
+    def test_le_gestionnaire_de_fichiers_ne_voit_pas_les_jetons(self):
+        sortie = self.env_vu_par("xdg-open", "/api/open")
+        self.assertEqual(self.jetons_visibles(sortie), [], "jetons visibles par « Ouvrir le dossier »")
+
+    def git_qui_note_son_env(self, sortie):
+        """Un faux git : note son environnement pour clone et fetch, puis passe la main au vrai
+        (sauf clone, qui échoue aussitôt : les tests ne vont pas sur Internet)."""
+        vrai_git = shutil.which("git")
+        faux = faux_programme("git", f"""for a in "$@"; do
+  case "$a" in clone|fetch) env > '{sortie}' ;; esac
+  case "$a" in clone) exit 1 ;; esac
+done
+exec '{vrai_git}' "$@"
+""")
+        os.environ["PATH"] = f"{faux}:{os.environ['PATH']}"
+
+    def test_le_telechargement_garde_les_jetons(self):
+        # git n'exécute pas le code du projet ; un dépôt privé peut avoir besoin du jeton
+        sortie = Path(tempfile.mkdtemp(dir=server.HUB_DIR)) / "env.txt"
+        self.git_qui_note_son_env(sortie)
+        attendre(server.start_job("test/prive", "install"))
+        self.assertEqual(sorted(self.jetons_visibles(sortie)), ["GH_TOKEN", "GITHUB_TOKEN"])
+
+    def test_la_mise_a_jour_garde_les_jetons(self):
+        origine = Path(tempfile.mkdtemp(dir=server.HUB_DIR)) / "origine.git"
+        git(origine.parent, "init", "-q", "--bare", str(origine))
+        path = faux_depot("test/prive-maj", {"LISEZMOI": "rien\n"})
+        git(path, "remote", "add", "origin", str(origine))
+        git(path, "push", "-q", "-u", "origin", "HEAD")
+        sortie = Path(tempfile.mkdtemp(dir=server.HUB_DIR)) / "env.txt"
+        self.git_qui_note_son_env(sortie)
+        job = attendre(server.start_job("test/prive-maj", "update"))
+        self.assertEqual(job["state"], "ok", "\n".join(job["log"]))
+        self.assertEqual(sorted(self.jetons_visibles(sortie)), ["GH_TOKEN", "GITHUB_TOKEN"])
 
 
 class RepereDeCompilation(unittest.TestCase):
@@ -195,6 +356,25 @@ class RepereDeCompilation(unittest.TestCase):
         self.assertTrue(server.local_status("test/binaire")["built"])
         nouveau_commit(path)  # le binaire est resté, mais il vient de l'ancien commit
         self.assertFalse(server.local_status("test/binaire")["built"])
+
+    def test_statut_ne_relit_le_commit_qu_une_fois(self):
+        faux_depot("test/une-fois", {"Makefile": "all:\n\ttrue\n"})
+        attendre(server.start_job("test/une-fois", "build"))
+        appels = []
+        vrai_git = server.git
+
+        def git_compte(path, *args, **kw):
+            appels.append(args)
+            return vrai_git(path, *args, **kw)
+
+        server.git = git_compte
+        try:
+            statut = server.local_status("test/une-fois")
+        finally:
+            server.git = vrai_git
+        self.assertTrue(statut["built"])
+        # « compilé » sert deux fois (statut et raccourci) : un seul git rev-parse HEAD
+        self.assertEqual(appels.count(("rev-parse", "HEAD")), 1)
 
 
 if __name__ == "__main__":

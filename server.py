@@ -39,6 +39,7 @@ PORT = int(os.environ.get("HUB_PORT", "8765"))
 REPO_RE = re.compile(r"^[A-Za-z0-9-]+/(?!\.\.?$)[A-Za-z0-9_.-]+$")
 PAGE_TTL = 30 * 60        # pages tendances / README en mémoire
 META_TTL = 6 * 3600       # infos des dépôts, gardées sur disque
+FETCH_TIMEOUT = 120       # secondes accordées à chaque git fetch de « Vérifier les mises à jour »
 
 jobs = {}            # id -> {repo, action, state, log, started}
 jobs_lock = threading.Lock()
@@ -642,15 +643,16 @@ def local_status(repo):
         ahead, behind = (int(x) for x in counts.split())
     sha, day, subject = (head.split("|", 2) + ["", ""])[:3]
     r = recipe(repo)
+    built = is_built(path, r)  # un git rev-parse : calculé une fois, sert deux fois
     return {"installed": True, "head": {"sha": sha, "date": day, "subject": subject},
             "dirty": bool(dirty), "ahead": ahead, "behind": behind, "path": str(path),
             "platform": r["platform"], "can_build": bool(r["build"]),
             "can_run": any(m != "web" for m in r["modes"]), "modes": r["modes"],
             "web": r["web"], "args_hint": r["args_hint"],
-            "built": is_built(path, r),
+            "built": built,
             "missing": missing_tools(r), "running": is_running(repo),
             "size": disk_size(repo), "shortcuts": shortcut_state(repo),
-            "launchable": bool(shortcut_command(repo, path, r))}
+            "launchable": bool(shortcut_command(repo, path, r, built))}
 
 
 # ---------------------------------------------------------------- poids sur le disque
@@ -745,10 +747,14 @@ def desktop_quote(arg):
     return quoted.replace("\\", "\\\\")
 
 
-def shortcut_command(repo, path, r=None):
-    """La commande lancée par un raccourci, hors du hub : fenêtre si possible, sinon terminal."""
+def shortcut_command(repo, path, r=None, built=None):
+    """La commande lancée par un raccourci, hors du hub : fenêtre si possible, sinon terminal.
+
+    built : résultat de is_built() s'il est déjà connu (évite de le recalculer).
+    """
     r = r or recipe(repo)
-    if not r["run"] or r["platform"] == "windows" or not is_built(path, r):
+    if not r["run"] or r["platform"] == "windows" or not (
+            is_built(path, r) if built is None else built):
         return None
     cmd = list(r["run"])
     if "/" in cmd[0] and not cmd[0].startswith("/"):
@@ -851,9 +857,13 @@ def pull_plan(dirty, ahead, behind):
 def terminal_cmd(cmd, cwd):
     if shutil.which("konsole"):
         return ["konsole", "--workdir", str(cwd), "-e", *cmd]
+    if shutil.which("xdg-terminal-exec"):
+        # le terminal par défaut du bureau (proposition de norme freedesktop), ex. Ptyxis
+        # ou GNOME Terminal sous GNOME ; livré avec Bazzite, paquet xdg-terminal-exec ailleurs
+        return ["xdg-terminal-exec", f"--dir={cwd}", "--", *cmd]
     if shutil.which("xterm"):
         return ["xterm", "-e", *cmd]
-    raise RuntimeError("Aucun terminal trouvé (konsole ou xterm).")
+    raise RuntimeError("Aucun terminal trouvé (konsole, xdg-terminal-exec ou xterm).")
 
 
 # ---------------------------------------------------------------- jobs
@@ -864,9 +874,11 @@ def run_job(job_id, repo, action):
 
     def stream(cmd, cwd=None, stoppable=False):
         log("$ " + shlex.join(cmd))
+        # git (clone, fetch, sous-modules…) n'exécute pas le code du projet et garde les
+        # jetons : un dépôt privé peut en avoir besoin. Compilation et programmes, non.
         p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True, errors="replace", start_new_session=stoppable,
-                             env=child_env())
+                             env=None if cmd[0] == "git" else child_env())
         if stoppable:
             running[repo] = p  # le bouton « Arrêter » peut l'interrompre
         with p.stdout:
@@ -1163,8 +1175,21 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self.send_json({"error": str(e)}, 502)
         elif url.path == "/api/jobs":
+            # le panneau Activité redemande la liste toutes les 0,8 s pendant une tâche : il
+            # dit combien de lignes de chaque journal il a déjà (have=id:n,…), et ne reçoit
+            # que la suite, à partir de la ligne log_from (un journal ne fait que s'allonger)
+            have = {}
+            for part in qs.get("have", [""])[0].split(","):
+                job_id, _, n = part.partition(":")
+                if n.isdigit():
+                    have[job_id] = int(n)
             with jobs_lock:
-                self.send_json(sorted(jobs.values(), key=lambda j: -j["started"])[:30])
+                recent = sorted(jobs.values(), key=lambda j: -j["started"])[:30]
+                out = []
+                for j in recent:
+                    start = min(have.get(j["id"], 0), len(j["log"]))
+                    out.append(dict(j, log=j["log"][start:], log_from=start))
+            self.send_json(out)
         else:
             self.send_json({"error": "introuvable"}, 404)
 
@@ -1178,9 +1203,13 @@ class Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         data = json.loads(self.rfile.read(length) or b"{}")
         if self.path == "/api/check":
+            def fetch(repo):
+                try:
+                    git(repo_path(repo), "fetch", "--prune", timeout=FETCH_TIMEOUT)
+                except subprocess.TimeoutExpired:
+                    pass  # dépôt injoignable : on garde son dernier état connu, sans bloquer les autres
             with ThreadPoolExecutor(6) as pool:
-                list(pool.map(lambda r: git(repo_path(r), "fetch", "--prune", timeout=120),
-                              installed_repos()))
+                list(pool.map(fetch, installed_repos()))
             return self.send_json({r: local_status(r) for r in installed_repos()})
         if self.path == "/api/update-all":
             ids = [start_job(r, "update") for r in installed_repos()]
@@ -1226,8 +1255,20 @@ class Handler(BaseHTTPRequestHandler):
         repo = data.get("repo", "")
         if not REPO_RE.match(repo):
             return self.send_json({"error": "nom de dépôt invalide"}, 400)
-        if self.path == "/api/open":
-            subprocess.Popen(["xdg-open", str(repo_path(repo))])
+        if self.path in ("/api/open", "/api/terminal"):
+            # « Ouvrir le dossier » et « Terminal ici » : une erreur claire plutôt qu'une
+            # connexion coupée sans réponse (le bouton ne faisait alors rien)
+            path = repo_path(repo)
+            if not path.is_dir():
+                return self.send_json({"error": "Ce projet n'est pas installé."}, 400)
+            try:
+                cmd = (["xdg-open", str(path)] if self.path == "/api/open"
+                       else terminal_cmd([os.environ.get("SHELL", "sh")], path))
+                subprocess.Popen(cmd, cwd=path, start_new_session=True, env=child_env())
+            except RuntimeError as e:  # aucun terminal
+                return self.send_json({"error": str(e)}, 400)
+            except FileNotFoundError:
+                return self.send_json({"error": f"« {cmd[0]} » est introuvable sur ce PC."}, 400)
             return self.send_json({"ok": True})
         if self.path == "/api/shortcut":
             if data.get("kind") not in ("desktop", "menu"):
@@ -1237,10 +1278,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True, "shortcuts": shortcut_state(repo)})
             except Exception as e:
                 return self.send_json({"error": str(e)}, 400)
-        if self.path == "/api/terminal":
-            subprocess.Popen(terminal_cmd([os.environ.get("SHELL", "sh")], repo_path(repo)),
-                             start_new_session=True, env=child_env())
-            return self.send_json({"ok": True})
         if self.path == "/api/stop":
             stop_program(repo)
             return self.send_json({"ok": True})

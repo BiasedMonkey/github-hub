@@ -1131,8 +1131,10 @@ async function startRun(repo, mode, args = "") {
 const ACTION_DONE = { install: "installé", update: "mis à jour", build: "recompilé", run: "lancé", remove: "supprimé" };
 async function act(action, repo, mode, data = {}) {
   closeMenu();
-  if (action === "open") return api("/api/open", {repo});
-  if (action === "terminal") return api("/api/terminal", {repo});
+  if (action === "open" || action === "terminal") {
+    const res = await api("/api/" + action, {repo});
+    return res.error && toast(res.error, "err");  // ex. aucun terminal installé
+  }
   if (action === "copy-path") {
     const path = allKnown().get(repo)?.local?.path;
     return navigator.clipboard.writeText(path).then(() => toast("Chemin copié : " + path, "ok"));
@@ -1175,7 +1177,11 @@ async function act(action, repo, mode, data = {}) {
 
 async function pollJobs() {
   const before = new Map(S.jobs.map(j => [j.id, j.state]));
-  S.jobs = await api("/api/jobs");
+  // on dit au serveur combien de lignes de chaque journal on a déjà : il n'envoie que la suite
+  const known = new Map(S.jobs.map(j => [j.id, j.log]));
+  const have = S.jobs.map(j => `${j.id}:${j.log.length}`).join(",");
+  const fresh = await api("/api/jobs" + (have ? "?have=" + have : ""));
+  S.jobs = fresh.map(j => ({...j, log: (known.get(j.id) || []).slice(0, j.log_from).concat(j.log)}));
   let finished = false;
   for (const j of S.jobs) {
     if (before.get(j.id) === "running" && j.state !== "running") {
@@ -1357,11 +1363,16 @@ async function loadBuzz() {
 async function checkUpdates() {
   const b = $("#check");
   b.disabled = true; b.innerHTML = `<span class="spin"></span>`;
-  const res = await api("/api/check", {});
-  const n = Object.values(res).filter(s => s.behind > 0).length;
-  S.checkInfo = Object.keys(res).length ? (n ? null : "Tout est à jour") : "Prêt";
-  if (n) toast(`${n} mise(s) à jour disponible(s)`, "ok");
-  b.disabled = false; b.innerHTML = icon("refresh");
+  try {
+    const res = await api("/api/check", {});
+    const n = Object.values(res).filter(s => s.behind > 0).length;
+    S.checkInfo = Object.keys(res).length ? (n ? null : "Tout est à jour") : "Prêt";
+    if (n) toast(`${n} mise(s) à jour disponible(s)`, "ok");
+  } catch (e) {
+    toast("La vérification des mises à jour a échoué.", "err");
+  } finally {
+    b.disabled = false; b.innerHTML = icon("refresh");  // jamais de bouton grisé pour de bon
+  }
   loadCatalog();
 }
 
